@@ -45,10 +45,15 @@ jobs:
         steps:
             - uses: actions/checkout@v4
 
+            - name: Read the pinned toolchain
+              id: rust
+              shell: bash
+              run: echo "channel=$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+
             - name: Install Rust toolchain
               uses: dtolnay/rust-toolchain@master
               with:
-                  toolchain: stable
+                  toolchain: ${{ steps.rust.outputs.channel }}
                   targets: ${{ matrix.target }}
 
             - name: Setup Rust cache
