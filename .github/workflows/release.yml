@@ -4,11 +4,6 @@ on:
     push:
         tags: ["v*"]
     workflow_dispatch:
-        inputs:
-            dry_run:
-                description: "Build the artifacts but do not create a release"
-                type: boolean
-                default: true
 
 permissions:
     contents: write
