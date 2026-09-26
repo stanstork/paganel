@@ -200,17 +200,48 @@ non-critical workloads; don't leave it unattended in production yet.
   capability-gated and off by default. Outbound HTTP is guarded (link-local/
   cloud-metadata blocked, per-request timeout, response-size cap, optional host
   allowlist); the key-value store is instance-scoped scratch, not persisted.
-- **No published binaries or crates yet** - build from source (below).
+- **Pre-1.0 versioning**: the PPL language and internal APIs still change
+  between releases, so pin the version you tested against.
 
 ## Install
 
-**From source (requires Rust 1.88 or newer):**
+**Prebuilt binary.** One file, nothing to install alongside it. Pick your
+platform from the [latest release](https://github.com/stanstork/paganel/releases/latest),
+or:
+
+```bash
+# Linux x86_64 (swap in aarch64-unknown-linux-gnu on arm64)
+curl -fsSL https://github.com/stanstork/paganel/releases/download/v0.1.0/pag-0.1.0-x86_64-unknown-linux-gnu.tar.gz | tar xz
+sudo mv pag-0.1.0-x86_64-unknown-linux-gnu/pag /usr/local/bin/
+
+# macOS, Apple silicon (swap in x86_64-apple-darwin on Intel)
+curl -fsSL https://github.com/stanstork/paganel/releases/download/v0.1.0/pag-0.1.0-aarch64-apple-darwin.tar.gz | tar xz
+sudo mv pag-0.1.0-aarch64-apple-darwin/pag /usr/local/bin/
+
+pag --version
+```
+
+On Windows, download `pag-0.1.0-x86_64-pc-windows-msvc.zip` from the same page.
+Every release ships `SHA256SUMS`, so `sha256sum -c SHA256SUMS` checks what you
+downloaded.
+
+The Linux builds link OpenSSL statically and need only glibc 2.35 or newer
+(Ubuntu 22.04 and later, Debian 12, RHEL 9, current Fedora and Arch).
+
+**From source** (requires Rust 1.88 or newer):
 
 ```bash
 git clone https://github.com/stanstork/paganel.git paganel
 cd paganel
 cargo build --release
 # binary at ./target/release/pag
+```
+
+**Plugin SDK.** Writing a plugin needs no clone at all:
+
+```toml
+[dependencies]
+paganel-plugin-sdk = "0.1"
 ```
 
 ## Quick Start
