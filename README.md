@@ -211,17 +211,17 @@ or:
 
 ```bash
 # Linux x86_64 (swap in aarch64-unknown-linux-gnu on arm64)
-curl -fsSL https://github.com/stanstork/paganel/releases/download/v0.1.0/pag-0.1.0-x86_64-unknown-linux-gnu.tar.gz | tar xz
-sudo mv pag-0.1.0-x86_64-unknown-linux-gnu/pag /usr/local/bin/
+curl -fsSL https://github.com/stanstork/paganel/releases/download/v0.1.1/pag-0.1.1-x86_64-unknown-linux-gnu.tar.gz | tar xz
+sudo mv pag-0.1.1-x86_64-unknown-linux-gnu/pag /usr/local/bin/
 
 # macOS, Apple silicon (swap in x86_64-apple-darwin on Intel)
-curl -fsSL https://github.com/stanstork/paganel/releases/download/v0.1.0/pag-0.1.0-aarch64-apple-darwin.tar.gz | tar xz
-sudo mv pag-0.1.0-aarch64-apple-darwin/pag /usr/local/bin/
+curl -fsSL https://github.com/stanstork/paganel/releases/download/v0.1.1/pag-0.1.1-aarch64-apple-darwin.tar.gz | tar xz
+sudo mv pag-0.1.1-aarch64-apple-darwin/pag /usr/local/bin/
 
 pag --version
 ```
 
-On Windows, download `pag-0.1.0-x86_64-pc-windows-msvc.zip` from the same page.
+On Windows, download `pag-0.1.1-x86_64-pc-windows-msvc.zip` from the same page.
 Every release ships `SHA256SUMS`, so `sha256sum -c SHA256SUMS` checks what you
 downloaded.
 
