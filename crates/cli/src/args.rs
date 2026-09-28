@@ -65,4 +65,11 @@ impl Cli {
             Commands::Plan { .. } | Commands::Receipt { .. }
         )
     }
+
+    pub fn can_pause(&self) -> bool {
+        matches!(
+            self.command,
+            Commands::Apply { .. } | Commands::Resume { .. }
+        )
+    }
 }

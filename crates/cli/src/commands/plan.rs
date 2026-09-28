@@ -3,7 +3,7 @@ use crate::{
     commands::{Commands, SampleMethod},
     config,
     error::CliError,
-    plan_summary,
+    plan,
     spinner::Spinner,
 };
 use engine_core::context::env::EnvContext;
@@ -76,7 +76,7 @@ pub async fn execute(cli: &Cli, commands: &Commands, env: Arc<EnvContext>) -> Re
             serde_json::to_string_pretty(&report)?
         } else {
             let color = !to_file && !cli.no_color && std::io::stdout().is_terminal();
-            plan_summary::render(&report, color, *ddl)
+            plan::render(&report, color, *ddl)
         };
 
         match output_path {

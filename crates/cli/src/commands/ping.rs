@@ -1,6 +1,7 @@
 use crate::{Cli, error::CliError};
-use engine_planner::connection::{
-    ConnectionTester, MySqlConnectionTester, PostgresConnectionTester,
+use engine_planner::{
+    connection::{ConnectionTester, MySqlConnectionTester, PostgresConnectionTester},
+    plan::connection::utils::mask_url,
 };
 use std::str::FromStr;
 use tracing::info;
@@ -72,8 +73,8 @@ pub async fn execute(cli: &Cli, url: String, format: Option<String>) -> Result<(
 /// Tests a MySQL connection
 async fn test_mysql_connection(cli: &Cli, url: String) -> Result<(), CliError> {
     let result = MySqlConnectionTester {
-        name: "test".to_string(),
-        conn_str: url,
+        name: mask_url(&url),
+        conn_str: url.clone(),
     }
     .test()
     .await?;
@@ -89,8 +90,8 @@ async fn test_mysql_connection(cli: &Cli, url: String) -> Result<(), CliError> {
 /// Tests a PostgreSQL connection
 async fn test_postgres_connection(cli: &Cli, url: String) -> Result<(), CliError> {
     let result = PostgresConnectionTester {
-        name: "test".to_string(),
-        conn_str: url,
+        name: mask_url(&url),
+        conn_str: url.clone(),
     }
     .test()
     .await?;

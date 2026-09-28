@@ -7,7 +7,11 @@ use connectors::{
     drivers::{mysql::driver::MySqlDriver, postgres::driver::PgDriver},
     traits::driver::Driver,
 };
+use std::{fmt::Display, future::Future, time::Duration};
 use tracing::{error, info};
+
+/// How long a single connection attempt may take.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Result of a connection test
 pub struct ConnectionTestResult {
@@ -31,18 +35,46 @@ pub struct PostgresConnectionTester {
     pub conn_str: String,
 }
 
+async fn connect<T, E: Display>(
+    name: &str,
+    url: &str,
+    engine: &str,
+    limit: Duration,
+    connect: impl Future<Output = Result<T, E>>,
+) -> Result<T, ConnectionError> {
+    match tokio::time::timeout(limit, connect).await {
+        Ok(Ok(driver)) => Ok(driver),
+        Ok(Err(e)) => {
+            error!(url = %mask_url(url), engine, error = %e, "connection failed");
+            Err(ConnectionError::Failed {
+                name: name.to_string(),
+                reason: format!("Connection failed: {e}"),
+            })
+        }
+        Err(_) => {
+            let timeout_ms = limit.as_millis() as u64;
+            error!(url = %mask_url(url), engine, timeout_ms, "connection timed out");
+            Err(ConnectionError::Timeout {
+                name: name.to_string(),
+                timeout_ms,
+            })
+        }
+    }
+}
+
 #[async_trait]
 impl ConnectionTester for MySqlConnectionTester {
     async fn test(&self) -> Result<ConnectionTestResult, ConnectionError> {
         info!(url = %mask_url(&self.conn_str), "pinging MySQL");
 
-        let driver = MySqlDriver::connect(&self.conn_str).await.map_err(|e| {
-            error!(url = %mask_url(&self.conn_str), error = %e, "MySQL connection failed");
-            ConnectionError::Failed {
-                name: self.name.clone(),
-                reason: format!("Connection failed: {e}"),
-            }
-        })?;
+        let driver = connect(
+            &self.name,
+            &self.conn_str,
+            "mysql",
+            CONNECT_TIMEOUT,
+            MySqlDriver::connect(&self.conn_str),
+        )
+        .await?;
 
         let version = driver.capabilities().version.clone();
         info!(url = %mask_url(&self.conn_str), version = %version, "MySQL ping succeeded");
@@ -56,13 +88,14 @@ impl ConnectionTester for PostgresConnectionTester {
     async fn test(&self) -> Result<ConnectionTestResult, ConnectionError> {
         info!(url = %mask_url(&self.conn_str), "pinging Postgres");
 
-        let driver = PgDriver::connect(&self.conn_str).await.map_err(|e| {
-            error!(url = %mask_url(&self.conn_str), error = %e, "Postgres connection failed");
-            ConnectionError::Failed {
-                name: self.name.clone(),
-                reason: format!("Connection failed: {e}"),
-            }
-        })?;
+        let driver = connect(
+            &self.name,
+            &self.conn_str,
+            "postgres",
+            CONNECT_TIMEOUT,
+            PgDriver::connect(&self.conn_str),
+        )
+        .await?;
 
         let version = driver.capabilities().version.clone();
         info!(url = %mask_url(&self.conn_str), version = %version, "Postgres ping succeeded");

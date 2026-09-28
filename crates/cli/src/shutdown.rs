@@ -1,10 +1,18 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
+use std::{
+    process,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use tokio::signal;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
+
+/// Exit status for a run ended by SIGINT (128 + 2), as the shell expects.
+const EXIT_SIGINT: i32 = 130;
+/// Exit status for a run ended by SIGTERM (128 + 15).
+const EXIT_SIGTERM: i32 = 143;
 
 /// Shutdown coordinator that listens for SIGINT and SIGTERM signals
 /// and triggers a graceful shutdown of the migration system.
@@ -26,7 +34,7 @@ impl ShutdownCoordinator {
         }
     }
 
-    pub fn register_handlers(&self) {
+    pub fn register_handlers(&self, can_pause: bool) {
         // SIGINT: first = pause, second = force stop
         {
             let cancel_token = self.cancel_token.clone();
@@ -38,6 +46,14 @@ impl ShutdownCoordinator {
                 signal::ctrl_c()
                     .await
                     .expect("Failed to install SIGINT handler");
+
+                if !can_pause {
+                    info!("received SIGINT, stopping");
+                    shutdown_flag.store(true, Ordering::SeqCst);
+                    cancel_token.cancel();
+                    process::exit(EXIT_SIGINT);
+                }
+
                 info!("received SIGINT, pausing migration (press Ctrl+C again to force stop)");
                 pause_flag.store(true, Ordering::SeqCst);
                 pause_token.cancel();
@@ -48,6 +64,7 @@ impl ShutdownCoordinator {
                 info!("received second SIGINT, forcing shutdown");
                 shutdown_flag.store(true, Ordering::SeqCst);
                 cancel_token.cancel();
+                process::exit(EXIT_SIGINT);
             });
         }
 
@@ -64,6 +81,7 @@ impl ShutdownCoordinator {
                 info!("received SIGTERM, forcing shutdown");
                 shutdown_flag.store(true, Ordering::SeqCst);
                 cancel_token.cancel();
+                process::exit(EXIT_SIGTERM);
             });
         }
     }

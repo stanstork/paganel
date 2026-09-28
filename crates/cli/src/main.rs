@@ -21,7 +21,7 @@ mod config;
 mod env;
 mod error;
 mod logger;
-mod plan_summary;
+mod plan;
 mod pretty_printer;
 mod shutdown;
 mod spinner;
@@ -49,7 +49,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
     // Set up graceful shutdown
     let shutdown = ShutdownSignal::new();
     let coordinator = ShutdownCoordinator::new(shutdown.cancel.clone(), shutdown.pause.clone());
-    coordinator.register_handlers();
+    coordinator.register_handlers(cli.can_pause());
 
     // Initialize environment variables
     let env = init_environment(cli.env_file.as_deref())?;
@@ -88,6 +88,10 @@ fn handle_error(error: CliError) -> i32 {
         }
         CliError::UserMessage(msg) => {
             eprintln!("{}", msg);
+            1
+        }
+        CliError::Connection(_) => {
+            eprintln!("Error: connection failed");
             1
         }
         _ => {
