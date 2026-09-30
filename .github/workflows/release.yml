@@ -157,7 +157,16 @@ jobs:
                   posix="$home"; command -v cygpath > /dev/null && posix=$(cygpath -u "$home")
                   mkdir -p "$posix"
                   echo "HOME=$home" >> "$GITHUB_ENV"
-                  echo "USERPROFILE=$home" >> "$GITHUB_ENV"
+                  # pag resolves its home with `dirs::home_dir()`, which on Windows
+                  # asks the OS for the profile folder and ignores HOME/USERPROFILE.
+                  # There it writes under the runner's real (disposable) profile;
+                  # PAG_HOME is wherever the assertions below should look.
+                  if command -v cygpath > /dev/null; then
+                      profile=$(powershell -NoProfile -Command "[Environment]::GetFolderPath('UserProfile')" | tr -d '\r')
+                      echo "PAG_HOME=$(cygpath -u "$profile")" >> "$GITHUB_ENV"
+                  else
+                      echo "PAG_HOME=$home" >> "$GITHUB_ENV"
+                  fi
 
             - uses: actions/checkout@v4
               with:
@@ -202,8 +211,7 @@ jobs:
                   out=$("$PAG" receipt --json)
                   echo "$out"
                   [ "$out" = "[]" ]
-                  home="$HOME"; command -v cygpath > /dev/null && home=$(cygpath -u "$HOME")
-                  test -d "$home/.paganel/state"
+                  test -d "$PAG_HOME/.paganel/state"
 
             - name: Plugin runtime works on this OS
               shell: bash
