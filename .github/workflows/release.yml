@@ -280,14 +280,21 @@ jobs:
                   S1=.github/smoke/csv-to-postgres.ppl
                   S2=.github/smoke/pg-to-pg.ppl
 
+                  expect() {
+                      local needle="$1"; shift
+                      local out; out=$("$@")
+                      echo "$out"
+                      echo "$out" | grep -q -- "$needle"
+                  }
+
                   # Stage 1: CSV source, COPY write path, receipt, clean verify.
-                  "$PAG" apply  -c "$S1" --integrity
-                  "$PAG" verify -c "$S1" | tee /dev/stderr | grep -q "match (5 rows"
+                  "$PAG" apply -c "$S1" --integrity
+                  expect "match (5 rows" "$PAG" verify -c "$S1"
 
                   # Stage 2: plan, then keyset read + filter + computed column.
-                  "$PAG" plan   -c "$S2" | tee /dev/stderr | grep -q "Ready to apply"
-                  "$PAG" apply  -c "$S2" --integrity
-                  "$PAG" verify -c "$S2" | tee /dev/stderr | grep -q "match (4 rows"
+                  expect "Ready to apply" "$PAG" plan -c "$S2"
+                  "$PAG" apply -c "$S2" --integrity
+                  expect "match (4 rows" "$PAG" verify -c "$S2"
 
                   # Tamper one row on the destination; verify must fail and name it.
                   psql "$POSTGRES_URL" -c "UPDATE smoke_customers_copy SET tier = 'TAMPERED' WHERE id = 4"
