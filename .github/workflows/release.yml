@@ -147,11 +147,18 @@ jobs:
                     - os: windows-latest
                       target: x86_64-pc-windows-msvc
         env:
-            HOME: ${{ runner.temp }}/pag-home
-            USERPROFILE: ${{ runner.temp }}/pag-home
             FIXTURES: crates/engine-wasm/src/tests/fixtures
 
         steps:
+            - name: Isolate pag's home directory
+              shell: bash
+              run: |
+                  home="$RUNNER_TEMP/pag-home"
+                  posix="$home"; command -v cygpath > /dev/null && posix=$(cygpath -u "$home")
+                  mkdir -p "$posix"
+                  echo "HOME=$home" >> "$GITHUB_ENV"
+                  echo "USERPROFILE=$home" >> "$GITHUB_ENV"
+
             - uses: actions/checkout@v4
               with:
                   sparse-checkout: |
@@ -166,8 +173,6 @@ jobs:
             - name: Unpack the archive like a user would
               shell: bash
               run: |
-                  home="$HOME"; command -v cygpath > /dev/null && home=$(cygpath -u "$HOME")
-                  mkdir -p "$home"
                   cd dist
                   if [ "${{ runner.os }}" = "Windows" ]; then
                       7z x -y pag-*-${{ matrix.target }}.zip > /dev/null
