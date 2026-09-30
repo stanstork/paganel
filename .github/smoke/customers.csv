@@ -1,0 +1,6 @@
+id,name,email,balance,active,signed_up
+1,Ada Lovelace,ADA@example.com ,120.50,true,2024-01-15
+2,Grace Hopper,grace@example.com,0.00,true,2024-02-01
+3,Linus Torvalds, linus@example.com,-15.25,false,2024-03-09
+4,Margaret Hamilton,margaret@example.com,999999.99,true,2024-04-30
+5,Ken Thompson,ken@example.com,42.00,true,2024-05-05

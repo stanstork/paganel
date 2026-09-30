@@ -1,0 +1,34 @@
+// Release smoke test: CSV -> PostgreSQL on a fresh runner, no Docker.
+// Exercises the real write path (COPY), checkpoints, integrity receipts and
+// verify, with a transform and a filter so the plan has something to show.
+
+connection "src" {
+  driver    = "csv"
+  url       = ".github/smoke/customers.csv"
+  pk_column = "id"
+}
+
+connection "dst" {
+  driver = "postgres"
+  url    = env("POSTGRES_URL")
+}
+
+pipeline "smoke_customers" {
+  from { connection = connection.src table = "customers" }
+  to   { connection = connection.dst table = "smoke_customers" mode = "replace" }
+
+  select {
+    id        = customers.id
+    name      = customers.name
+    email     = lower(trim(customers.email))
+    balance   = customers.balance
+    active    = customers.active
+    signed_up = customers.signed_up
+  }
+
+  // Stage 2 (pg-to-pg.ppl) reads this table back keyed by id, and the CSV
+  // driver's pk_column does not reach the created table yet, so add it here.
+  after { sql = ["ALTER TABLE smoke_customers ADD PRIMARY KEY (id)"] }
+
+  settings { create_missing_tables = true }
+}

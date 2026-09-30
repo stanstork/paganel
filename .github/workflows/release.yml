@@ -127,9 +127,169 @@ jobs:
                   path: ${{ env.ASSET }}
                   if-no-files-found: error
 
+    smoke:
+        # Runs against the packaged archive on a fresh runner, not the build tree.
+        name: smoke ${{ matrix.target }}
+        needs: build
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - os: ubuntu-22.04
+                      target: x86_64-unknown-linux-gnu
+                    - os: ubuntu-22.04-arm
+                      target: aarch64-unknown-linux-gnu
+                    - os: macos-15
+                      target: aarch64-apple-darwin
+                    - os: macos-15-intel
+                      target: x86_64-apple-darwin
+                    - os: windows-latest
+                      target: x86_64-pc-windows-msvc
+        env:
+            HOME: ${{ runner.temp }}/pag-home
+            USERPROFILE: ${{ runner.temp }}/pag-home
+            FIXTURES: crates/engine-wasm/src/tests/fixtures
+
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  sparse-checkout: |
+                      .github/smoke
+                      crates/engine-wasm/src/tests/fixtures
+
+            - uses: actions/download-artifact@v4
+              with:
+                  name: ${{ matrix.target }}
+                  path: dist
+
+            - name: Unpack the archive like a user would
+              shell: bash
+              run: |
+                  home="$HOME"; command -v cygpath > /dev/null && home=$(cygpath -u "$HOME")
+                  mkdir -p "$home"
+                  cd dist
+                  if [ "${{ runner.os }}" = "Windows" ]; then
+                      7z x -y pag-*-${{ matrix.target }}.zip > /dev/null
+                      bin=pag.exe
+                  else
+                      tar xzf pag-*-${{ matrix.target }}.tar.gz
+                      bin=pag
+                  fi
+                  dir=$(ls -d pag-*-${{ matrix.target }}/)
+                  ls -l "$dir"
+                  test -f "$dir/README.md"
+                  test -f "$dir/LICENSE"
+                  test -x "$dir/$bin"
+                  echo "PAG=$PWD/$dir$bin" >> "$GITHUB_ENV"
+
+            - name: Version and help
+              shell: bash
+              run: |
+                  "$PAG" --version
+                  "$PAG" plan   --help > /dev/null
+                  "$PAG" apply  --help > /dev/null
+                  "$PAG" verify --help > /dev/null
+
+            - name: State store opens on this OS
+              shell: bash
+              run: |
+                  out=$("$PAG" receipt --json)
+                  echo "$out"
+                  [ "$out" = "[]" ]
+                  home="$HOME"; command -v cygpath > /dev/null && home=$(cygpath -u "$HOME")
+                  test -d "$home/.paganel/state"
+
+            - name: Plugin runtime works on this OS
+              shell: bash
+              run: |
+                  "$PAG" plugin inspect "$FIXTURES/test_transform.wasm"
+                  "$PAG" plugin inspect "$FIXTURES/test_transform_js.wasm"
+
+                  out=$("$PAG" plugin test "$FIXTURES/test_transform.wasm" --json \
+                        --input '[{"a":2,"b":3},{"a":10,"b":1}]' | tr -d ' \n\r')
+                  echo "$out"
+                  # `values` are currently emitted as Debug strings ("Float(5.0)");
+                  # match the numbers so this keeps passing once that is fixed.
+                  case "$out" in
+                      '{"values":['*5.0*11.0*']}') ;;
+                      *) echo "unexpected transform output" >&2; exit 1 ;;
+                  esac
+
+                  out=$("$PAG" plugin test "$FIXTURES/test_filter.wasm" --mode filter --json \
+                        --input '[{"value":10},{"value":-5}]' | tr -d ' \n\r')
+                  echo "$out"
+                  [ "$out" = '{"passes":[true,false]}' ]
+
+                  "$PAG" plugin test "$FIXTURES/test_source.wasm" --mode source --json
+                  "$PAG" plugin test "$FIXTURES/test_sink.wasm" --mode sink --json \
+                        --input '[{"id":1},{"id":2}]'
+
+            # ---- real migration against a local PostgreSQL --------------------
+
+            - name: Start PostgreSQL (Linux)
+              if: runner.os == 'Linux'
+              run: |
+                  command -v psql > /dev/null || sudo apt-get install -y -q postgresql
+                  sudo systemctl start postgresql
+                  sudo -u postgres psql -c "CREATE USER smoke WITH PASSWORD 'smoke' SUPERUSER"
+                  sudo -u postgres psql -c "CREATE DATABASE smoke OWNER smoke"
+                  echo "POSTGRES_URL=postgres://smoke:smoke@localhost:5432/smoke" >> "$GITHUB_ENV"
+
+            - name: Start PostgreSQL (macOS)
+              if: runner.os == 'macOS'
+              run: |
+                  brew install postgresql@16
+                  prefix="$(brew --prefix postgresql@16)"
+                  echo "$prefix/bin" >> "$GITHUB_PATH"
+                  "$prefix/bin/pg_ctl" -D "$(brew --prefix)/var/postgresql@16" -l "$RUNNER_TEMP/pg.log" -w start
+                  "$prefix/bin/createdb" smoke
+                  echo "POSTGRES_URL=postgres://$USER@localhost:5432/smoke" >> "$GITHUB_ENV"
+
+            - name: Start PostgreSQL (Windows)
+              if: runner.os == 'Windows'
+              shell: pwsh
+              run: |
+                  # The runner image ships PostgreSQL as a disabled service, with
+                  # PGBIN set and the postgres superuser password "root".
+                  $svc = Get-Service -Name 'postgresql*' | Select-Object -First 1
+                  if (-not $svc) { throw "no PostgreSQL service on this image" }
+                  Set-Service -Name $svc.Name -StartupType Manual
+                  Start-Service -Name $svc.Name
+                  $env:PGPASSWORD = 'root'
+                  & "$env:PGBIN\psql" -U postgres -c "CREATE DATABASE smoke"
+                  "$env:PGBIN" | Out-File -Append -FilePath $env:GITHUB_PATH
+                  "POSTGRES_URL=postgres://postgres:root@localhost:5432/smoke" | Out-File -Append -FilePath $env:GITHUB_ENV
+
+            - name: Migrate CSV -> PostgreSQL -> PostgreSQL, verify, tamper, verify
+              shell: bash
+              run: |
+                  S1=.github/smoke/csv-to-postgres.ppl
+                  S2=.github/smoke/pg-to-pg.ppl
+
+                  # Stage 1: CSV source, COPY write path, receipt, clean verify.
+                  "$PAG" apply  -c "$S1" --integrity
+                  "$PAG" verify -c "$S1" | tee /dev/stderr | grep -q "match (5 rows"
+
+                  # Stage 2: plan, then keyset read + filter + computed column.
+                  "$PAG" plan   -c "$S2" | tee /dev/stderr | grep -q "Ready to apply"
+                  "$PAG" apply  -c "$S2" --integrity
+                  "$PAG" verify -c "$S2" | tee /dev/stderr | grep -q "match (4 rows"
+
+                  # Tamper one row on the destination; verify must fail and name it.
+                  psql "$POSTGRES_URL" -c "UPDATE smoke_customers_copy SET tier = 'TAMPERED' WHERE id = 4"
+                  if out=$("$PAG" verify -c "$S2"); then
+                      echo "verify passed on a tampered table" >&2; exit 1
+                  fi
+                  echo "$out"
+                  echo "$out" | grep -q "id=4 - changed"
+
+                  # Both receipts are in the state store.
+                  [ "$("$PAG" receipt --json | grep -c '"pipeline"')" = "2" ]
+
     release:
         name: Publish release
-        needs: build
+        needs: [build, smoke]
         runs-on: ubuntu-latest
         if: startsWith(github.ref, 'refs/tags/v')
         steps:

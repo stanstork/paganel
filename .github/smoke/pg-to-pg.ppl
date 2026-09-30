@@ -1,0 +1,33 @@
+// Release smoke test, stage 2: PostgreSQL -> PostgreSQL on the table stage 1
+// loaded. Covers `plan` (the CSV driver cannot be planned yet), the keyset
+// read path, a computed column, and a keyed receipt whose mismatch names the row.
+
+connection "db" {
+  driver = "postgres"
+  url    = env("POSTGRES_URL")
+}
+
+pipeline "smoke_copy" {
+  from { connection = connection.db table = "smoke_customers" }
+  to   { connection = connection.db table = "smoke_customers_copy" mode = "replace" }
+
+  where "in_good_standing" { smoke_customers.balance >= 0 }
+
+  select {
+    id         = smoke_customers.id
+    name       = smoke_customers.name
+    email      = smoke_customers.email
+    balance    = smoke_customers.balance
+    tier = when {
+      smoke_customers.balance > 1000 then "gold"
+      else "standard"
+    }
+  }
+
+  paginate {
+    strategy = "pk"
+    cursor   = "smoke_customers.id"
+  }
+
+  settings { create_missing_tables = true }
+}
