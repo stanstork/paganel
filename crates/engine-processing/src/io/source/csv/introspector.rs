@@ -70,6 +70,7 @@ impl CsvIntrospector {
                         data_type: base,
                         full_column_type: Some(ddl.to_lowercase()),
                         is_nullable: col.is_nullable,
+                        is_primary_key: col.is_primary_key,
                         num_precision,
                         num_scale,
                         char_max_length,

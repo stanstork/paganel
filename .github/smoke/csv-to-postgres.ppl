@@ -25,10 +25,6 @@ pipeline "smoke_customers" {
     active    = customers.active
     signed_up = customers.signed_up
   }
-
-  // Stage 2 (pg-to-pg.ppl) reads this table back keyed by id, and the CSV
-  // driver's pk_column does not reach the created table yet, so add it here.
-  after { sql = ["ALTER TABLE smoke_customers ADD PRIMARY KEY (id)"] }
-
+  
   settings { create_missing_tables = true }
 }
