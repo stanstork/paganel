@@ -121,7 +121,7 @@ pub(crate) async fn reset_mysql_dest() {
     clear_state_store();
 }
 
-/// Remove the sled state store so a test starts from a clean checkpoint.
+/// Remove the state store so a test starts from a clean checkpoint.
 pub(crate) fn clear_state_store() {
     let home_dir = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))

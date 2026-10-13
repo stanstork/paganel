@@ -10,8 +10,8 @@ mod tests {
     };
     use engine_core::plan::execution::ExecutionPlan;
     use engine_processing::EnvContext;
+    use engine_state::StateStore;
     use engine_state::models::{PipelineStatus, RunState, RunStatus};
-    use engine_state::{SledStateStore, StateStore};
     use ppl_syntax::builder::parse;
     use std::sync::Arc;
     use tracing_test::traced_test;
@@ -246,7 +246,7 @@ mod tests {
         let plan = ExecutionPlan::build(&doc, env).expect("build plan");
 
         let dir = dirs::home_dir().expect("home dir").join(".paganel/state");
-        let store = SledStateStore::open(dir).expect("open state store");
+        let store = StateStore::open(dir).expect("open state store");
 
         store
             .load_run_state(&plan.run_id())

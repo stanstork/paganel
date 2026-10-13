@@ -17,7 +17,6 @@ use engine_core::context::env::EnvContext;
 use engine_core::plan::execution::ExecutionPlan as CoreExecutionPlan;
 use engine_infra::event_bus::bus::EventBus;
 use engine_infra::shutdown::ShutdownSignal;
-use engine_state::StateStore;
 use indicatif::{ProgressBar, ProgressStyle};
 use model::{
     events::migration::MigrationEvent,

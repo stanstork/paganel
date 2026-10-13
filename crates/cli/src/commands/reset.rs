@@ -2,7 +2,7 @@ use super::{open_state_store, state_dir};
 use crate::{config, error::CliError};
 use engine_processing::EnvContext;
 use engine_state::{
-    MerkleStore, RowHashLog, StateStore,
+    RowHashLog,
     models::{PipelineStatus, RunStatus},
 };
 use std::{

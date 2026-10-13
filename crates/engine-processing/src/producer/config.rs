@@ -1,6 +1,8 @@
 use model::integrity::config::IntegrityConfig;
 use std::{num::NonZeroUsize, time::Duration};
 
+pub const DEFAULT_BATCH_SIZE: usize = 10_000;
+
 /// Configuration for producer behavior.
 #[derive(Debug, Clone)]
 pub struct ProducerConfig {
@@ -30,7 +32,7 @@ pub struct ProducerConfig {
 impl Default for ProducerConfig {
     fn default() -> Self {
         Self {
-            batch_size: 1000,
+            batch_size: DEFAULT_BATCH_SIZE,
             transform_concurrency: NonZeroUsize::new(8).expect("8 is non-zero"),
             idle_poll_interval: Duration::from_millis(500),
             sample_size: 10,

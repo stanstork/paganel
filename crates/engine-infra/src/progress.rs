@@ -10,7 +10,7 @@ use std::{fmt, sync::Arc};
 
 #[derive(Clone)]
 pub struct ProgressService {
-    pub store: Arc<dyn StateStore>,
+    pub store: Arc<StateStore>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -51,7 +51,7 @@ pub struct ProgressStatus {
 }
 
 impl ProgressService {
-    pub fn new(store: Arc<dyn StateStore>) -> Self {
+    pub fn new(store: Arc<StateStore>) -> Self {
         ProgressService { store }
     }
 
@@ -182,7 +182,7 @@ fn stage_from_checkpoint(stage: &CheckpointStage) -> ProgressStage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use engine_state::SledStateStore;
+    use engine_state::StateStore;
     use model::pagination::cursor::Cursor;
     use tempfile::tempdir;
 
@@ -212,8 +212,7 @@ mod tests {
     #[tokio::test]
     async fn reports_snapshot_stage_with_checkpoint() {
         let dir = tempdir().unwrap();
-        let store: Arc<dyn StateStore> =
-            Arc::new(SledStateStore::open(dir.path()).expect("open sled"));
+        let store: Arc<StateStore> = Arc::new(StateStore::open(dir.path()).expect("open sled"));
         let service = ProgressService::new(store.clone());
 
         store
@@ -256,8 +255,7 @@ mod tests {
     #[tokio::test]
     async fn reports_done_stage_when_item_finished() {
         let dir = tempdir().unwrap();
-        let store: Arc<dyn StateStore> =
-            Arc::new(SledStateStore::open(dir.path()).expect("open sled"));
+        let store: Arc<StateStore> = Arc::new(StateStore::open(dir.path()).expect("open sled"));
         let service = ProgressService::new(store.clone());
 
         store
@@ -276,8 +274,7 @@ mod tests {
     #[tokio::test]
     async fn reports_failed_stage_when_breaker_tripped() {
         let dir = tempdir().unwrap();
-        let store: Arc<dyn StateStore> =
-            Arc::new(SledStateStore::open(dir.path()).expect("open sled"));
+        let store: Arc<StateStore> = Arc::new(StateStore::open(dir.path()).expect("open sled"));
         let service = ProgressService::new(store.clone());
 
         store

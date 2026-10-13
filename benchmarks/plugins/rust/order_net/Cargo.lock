@@ -227,6 +227,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "paganel-plugin-sdk"
+version = "0.1.1"
+dependencies = [
+ "base64",
+ "bigdecimal",
+ "chrono",
+ "paganel-plugin-sdk-macros",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "paganel-plugin-sdk-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "serde_json",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -316,29 +339,6 @@ name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
-
-[[package]]
-name = "paganel-plugin-sdk"
-version = "0.1.0"
-dependencies = [
- "base64",
- "bigdecimal",
- "chrono",
- "serde",
- "serde_json",
- "paganel-plugin-sdk-macros",
- "uuid",
-]
-
-[[package]]
-name = "paganel-plugin-sdk-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "serde_json",
- "syn 2.0.119",
-]
 
 [[package]]
 name = "syn"

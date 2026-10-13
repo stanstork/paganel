@@ -5,7 +5,7 @@ use connectors::{
     traits::{driver::Driver, introspector::SchemaIntrospector},
 };
 use engine_schema::metadata_cache::MetadataCache;
-use engine_state::{RowHashLog, SledStateStore};
+use engine_state::{RowHashLog, StateStore};
 use model::execution::connection::Connection;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::RwLock;
@@ -24,7 +24,7 @@ pub struct ExecutionContext {
     meta_caches: Arc<RwLock<HashMap<String, Arc<dyn SchemaIntrospector>>>>,
 
     run_id: String,
-    state: Arc<SledStateStore>,
+    state: Arc<StateStore>,
     hash_log: Arc<RowHashLog>,
     env: Arc<EnvContext>,
 }
@@ -32,7 +32,7 @@ pub struct ExecutionContext {
 impl ExecutionContext {
     pub fn new(
         plan: &ExecutionPlan,
-        state: Arc<SledStateStore>,
+        state: Arc<StateStore>,
         hash_log: Arc<RowHashLog>,
         env: Arc<EnvContext>,
     ) -> Self {
@@ -58,7 +58,7 @@ impl ExecutionContext {
         &self.hash_log
     }
 
-    pub fn state(&self) -> &Arc<SledStateStore> {
+    pub fn state(&self) -> &Arc<StateStore> {
         &self.state
     }
 

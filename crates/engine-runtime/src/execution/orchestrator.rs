@@ -20,7 +20,6 @@ use engine_processing::{
     },
 };
 use engine_schema::schema_ops::{SchemaOp, SchemaOps};
-use engine_state::{MerkleStore, StateStore};
 use model::integrity::{algorithm::HashAlgorithm, config::IntegrityConfig};
 use model::{
     events::migration::MigrationEvent,
@@ -293,7 +292,7 @@ impl PipelineOrchestrator {
         // One receipt per table, written once every lane has finished: the root
         // commits to the complete row set, so no lane can finalize on its own.
         if let Some(config) = &integrity {
-            let receipts = self.ctx.state.clone() as Arc<dyn MerkleStore>;
+            let receipts = self.ctx.state.clone();
 
             finalize_receipts(
                 config,

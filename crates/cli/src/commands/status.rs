@@ -1,24 +1,18 @@
-use super::{state_dir, try_open_state_store};
+use super::open_state_store;
 use crate::{config, error::CliError};
 use chrono::{DateTime, Utc};
 use engine_processing::EnvContext;
 use engine_state::{
-    SledStateStore, StateStore,
+    StateStore,
     error::StateStoreError,
     models::{PipelineStatus, RunState, RunStatus},
-    store::live,
 };
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 const DATE_FORMAT: &str = "%Y-%m-%d %H:%M:%S UTC";
 
 pub async fn execute(config_path: Option<String>, env: Arc<EnvContext>) -> Result<(), CliError> {
-    // A running migration holds the state store open, so fall back to the status
-    // it publishes beside the database.
-    let Some(state) = try_open_state_store()? else {
-        eprintln!("A migration is running; showing the status it publishes.");
-        return show_live(config_path, env).await;
-    };
+    let state = open_state_store()?;
 
     if let Some(path) = config_path {
         show_config_status(&state, &path, env).await
@@ -27,28 +21,8 @@ pub async fn execute(config_path: Option<String>, env: Arc<EnvContext>) -> Resul
     }
 }
 
-/// Status for a run that currently holds the lock, read from its published file.
-async fn show_live(config_path: Option<String>, env: Arc<EnvContext>) -> Result<(), CliError> {
-    let dir = state_dir()?;
-
-    let Some(config_path) = config_path else {
-        return print_runs(live::list_live_runs(&dir));
-    };
-
-    let resolved = config::resolve_path(Some(config_path))?;
-    let plan = config::load_plan(&resolved, false, env).await?;
-    let run_id = plan.run_id();
-
-    match live::read_live_run(&dir, &run_id) {
-        Some(run) => print_run_detail(&run),
-        None => println!("No published status for config '{resolved}' (run_id: {run_id})"),
-    }
-
-    Ok(())
-}
-
 async fn show_config_status(
-    state: &SledStateStore,
+    state: &StateStore,
     config_path: &str,
     env: Arc<EnvContext>,
 ) -> Result<(), CliError> {
@@ -57,11 +31,23 @@ async fn show_config_status(
     let run_id = plan.run_id();
 
     match state.load_run_state(&run_id).await.map_err(state_err)? {
-        Some(run) => print_run_detail(&run),
+        Some(mut run) => {
+            let checkpoint_rows = state.rows_done_by_item(&run_id).await.map_err(state_err)?;
+            apply_checkpoint_progress(&mut run, &checkpoint_rows);
+            print_run_detail(&run);
+        }
         None => println!("No run found for config '{resolved}' (run_id: {run_id})"),
     }
 
     Ok(())
+}
+
+fn apply_checkpoint_progress(run: &mut RunState, checkpoint_rows: &HashMap<String, u64>) {
+    for pipeline in &mut run.pipelines {
+        if let Some(&rows) = checkpoint_rows.get(&pipeline.item_id) {
+            pipeline.rows_done = pipeline.rows_done.max(rows);
+        }
+    }
 }
 
 fn print_runs(mut runs: Vec<RunState>) -> Result<(), CliError> {
@@ -134,8 +120,8 @@ fn print_run_detail(run: &RunState) {
         RunStatus::Running => {}
     }
 
-    println!("\n  {:<30} {:<12} {:>10}", "PIPELINE", "STATUS", "ROWS");
-    println!("  {}", "-".repeat(54));
+    println!("\n  {:<30} {:<12} {:>24}", "PIPELINE", "STATUS", "ROWS");
+    println!("  {}", "-".repeat(68));
 
     for p in &run.pipelines {
         let status_str = match p.status {
@@ -146,12 +132,19 @@ fn print_run_detail(run: &RunState) {
             PipelineStatus::Blocked => "blocked",
         };
 
-        let rows = match p.rows_done {
-            0 => "-".to_string(),
-            n => n.to_string(),
-        };
+        let rows = format_rows(p.rows_done, p.total_rows);
 
-        println!("  {:<30} {status_str:<12} {rows:>10}", p.name);
+        println!("  {:<30} {status_str:<12} {rows:>24}", p.name);
+    }
+}
+
+fn format_rows(done: u64, total: Option<u64>) -> String {
+    match (done, total) {
+        (0, _) => "-".to_string(),
+        (done, Some(total)) if total > 0 => {
+            format!("{done} / {total} ({}%)", done.min(total) * 100 / total)
+        }
+        (done, _) => done.to_string(),
     }
 }
 

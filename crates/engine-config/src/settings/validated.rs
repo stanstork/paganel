@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use connectors::drivers::postgres::config::PkCreation;
+use engine_processing::producer::config::DEFAULT_BATCH_SIZE;
 use model::{core::value::Value, execution::flags::IntegrityMode};
 use serde::Serialize;
 
@@ -39,7 +40,7 @@ pub struct ValidatedSettings {
 impl ValidatedSettings {
     pub fn default(dry_run: bool) -> Self {
         Self {
-            batch_size: 1000,
+            batch_size: DEFAULT_BATCH_SIZE,
             create_missing_tables: false,
             create_missing_columns: false,
             skip_pk: false,
@@ -73,7 +74,7 @@ impl ValidatedSettings {
 
     pub fn from_builder(builder: ValidatedSettingsBuilder) -> Self {
         Self {
-            batch_size: builder.batch_size.unwrap_or(1000),
+            batch_size: builder.batch_size.unwrap_or(DEFAULT_BATCH_SIZE),
             create_missing_tables: builder.create_missing_tables.unwrap_or(false),
             create_missing_columns: builder.create_missing_columns.unwrap_or(false),
             skip_pk: builder.skip_pk.unwrap_or(false),
@@ -244,7 +245,7 @@ mod tests {
     #[test]
     fn test_default_settings() {
         let settings = ValidatedSettings::default(false);
-        assert_eq!(settings.batch_size(), 1000);
+        assert_eq!(settings.batch_size(), DEFAULT_BATCH_SIZE);
         assert!(!settings.is_dry_run());
         assert!(!settings.requires_schema_op());
     }

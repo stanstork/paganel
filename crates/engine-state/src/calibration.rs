@@ -1,6 +1,12 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, error::Error, path::Path, path::PathBuf};
+use std::{
+    collections::HashMap,
+    error::Error,
+    fs::File,
+    io::{BufReader, BufWriter, ErrorKind},
+    path::{Path, PathBuf},
+};
 
 /// Destination write path, the primary determinant of throughput.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -41,34 +47,51 @@ pub struct CalibrationData {
 }
 
 impl CalibrationData {
-    const DB_KEY: &'static str = "calibration_v1";
-
     pub fn path_for(home: &Path) -> PathBuf {
-        home.join(".paganel/calibration")
+        home.join(".paganel").join("calibration.json")
     }
 
-    pub fn load(db_path: impl AsRef<Path>) -> Result<Self, Box<dyn Error + Send + Sync>> {
-        let db = sled::open(db_path)?;
-        Ok(match db.get(Self::DB_KEY)? {
-            Some(bytes) => bincode::deserialize(&bytes).unwrap_or_default(),
-            None => Self::default(),
-        })
+    pub fn load(path: impl AsRef<Path>) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        match File::open(path) {
+            Ok(file) => {
+                let reader = BufReader::new(file);
+                Ok(serde_json::from_reader(reader).unwrap_or_default())
+            }
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(Self::default()),
+            Err(e) => Err(e.into()),
+        }
     }
 
-    pub fn save(&self, db_path: impl AsRef<Path>) -> Result<(), Box<dyn Error + Send + Sync>> {
-        let db = sled::open(db_path)?;
-        db.insert(Self::DB_KEY, bincode::serialize(self)?)?;
-        db.flush()?;
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<(), Box<dyn Error + Send + Sync>> {
+        let path = path.as_ref();
+
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        let mut tmp = path.to_path_buf();
+        let mut name = tmp.file_name().unwrap_or_default().to_os_string();
+
+        name.push(".tmp");
+        tmp.set_file_name(name);
+
+        {
+            let file = File::create(&tmp)?;
+            let writer = BufWriter::new(file);
+            serde_json::to_writer_pretty(writer, self)?;
+        }
+
+        std::fs::rename(&tmp, path)?;
         Ok(())
     }
 
     pub fn record(&mut self, class: WriteClass, throughput: u64) {
         let stat = self.classes.entry(class).or_default();
 
-        stat.avg_throughput = if stat.observation_count == 0 {
-            throughput
-        } else {
-            (stat.avg_throughput * 9 + throughput) / 10
+        stat.avg_throughput = match stat.observation_count {
+            0 => throughput,
+            // Exponential moving average: 90% old, 10% new
+            _ => (stat.avg_throughput * 9 + throughput) / 10,
         };
 
         stat.observation_count += 1;
@@ -115,7 +138,7 @@ mod tests {
     #[test]
     fn save_and_load_round_trip() {
         let dir = TempDir::new().unwrap();
-        let path = dir.path().join("calibration");
+        let path = dir.path().join("calibration.json");
 
         let mut data = CalibrationData::default();
         data.record(WriteClass::MySql, 120_000);
@@ -124,5 +147,15 @@ mod tests {
         let loaded = CalibrationData::load(&path).unwrap();
         assert_eq!(loaded.throughput_for(WriteClass::MySql), Some(120_000));
         assert_eq!(loaded.throughput_for(WriteClass::Postgres), None);
+    }
+
+    #[test]
+    fn missing_or_corrupt_file_loads_as_empty() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("calibration.json");
+        assert!(CalibrationData::load(&path).unwrap().updated_at.is_none());
+
+        std::fs::write(&path, b"not json").unwrap();
+        assert!(CalibrationData::load(&path).unwrap().updated_at.is_none());
     }
 }

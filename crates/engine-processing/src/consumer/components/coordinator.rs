@@ -15,6 +15,7 @@ pub struct BatchCoordinator {
     state_manager: StateManager,
     metrics: Metrics,
     batch_rx: mpsc::Receiver<BatchEnvelope>,
+    rows_done: Option<u64>,
 }
 
 impl BatchCoordinator {
@@ -29,6 +30,7 @@ impl BatchCoordinator {
             state_manager,
             metrics,
             batch_rx,
+            rows_done: None,
         }
     }
 
@@ -46,7 +48,7 @@ impl BatchCoordinator {
     }
 
     /// Process a single batch: write + checkpoint + metrics.
-    pub async fn process_batch(&self, batch: &Batch) -> Result<(), ConsumerError> {
+    pub async fn process_batch(&mut self, batch: &Batch) -> Result<(), ConsumerError> {
         use std::time::Instant;
 
         let t_total = Instant::now();
@@ -64,7 +66,7 @@ impl BatchCoordinator {
         );
 
         // Get current progress
-        let current_rows = self.get_progress().await?;
+        let current_rows = self.rows_done().await?;
 
         // Mark as being written
         self.state_manager
@@ -90,28 +92,15 @@ impl BatchCoordinator {
 
         let new_rows = current_rows + row_count as u64;
 
-        // Mark as committed
+        // Mark as committed: WAL entry and checkpoint in one transaction.
         self.state_manager
-            .commit_batch(&batch.id)
+            .commit_batch(&batch.id, &batch.next, new_rows)
             .await
             .map_err(|e| ConsumerError::Checkpoint {
                 batch_id: batch.id.clone(),
                 source: e,
             })?;
-
-        self.state_manager
-            .save_checkpoint(
-                &CheckpointStage::Committed,
-                &batch.next,
-                None,
-                &batch.id,
-                new_rows,
-            )
-            .await
-            .map_err(|e| ConsumerError::Checkpoint {
-                batch_id: batch.id.clone(),
-                source: e,
-            })?;
+        self.rows_done = Some(new_rows);
 
         self.metrics.increment_records(row_count as u64);
         self.metrics.increment_bytes(byte_count as u64);
@@ -142,12 +131,18 @@ impl BatchCoordinator {
         self.metrics.snapshot().records_processed
     }
 
-    async fn get_progress(&self) -> Result<u64, ConsumerError> {
-        Ok(self
+    async fn rows_done(&mut self) -> Result<u64, ConsumerError> {
+        if let Some(rows) = self.rows_done {
+            return Ok(rows);
+        }
+
+        let rows = self
             .state_manager
             .load_checkpoint()
             .await?
             .map(|cp| cp.rows_done)
-            .unwrap_or(0))
+            .unwrap_or(0);
+        self.rows_done = Some(rows);
+        Ok(rows)
     }
 }

@@ -2,7 +2,7 @@ use crate::{Cli, error::CliError};
 use clap::{Subcommand, ValueEnum};
 use engine_infra::shutdown::ShutdownSignal;
 use engine_processing::EnvContext;
-use engine_state::{SledStateStore, StateStore, models::RunStatus};
+use engine_state::{StateStore, models::RunStatus};
 use model::execution::flags::IntegrityMode;
 use std::{path::PathBuf, sync::Arc};
 
@@ -38,22 +38,22 @@ pub async fn run_completed(run_id: &str) -> bool {
     )
 }
 
-/// Opens the sled state store from the default location.
-pub fn open_state_store() -> Result<SledStateStore, CliError> {
+/// Opens the state store from the default location.
+pub fn open_state_store() -> Result<StateStore, CliError> {
     let path = state_dir()?;
     match try_open_state_store()? {
         Some(store) => Ok(store),
         None => Err(CliError::UserMessage(format!(
-            "A migration is already running and holds the state store at {}.\nWait for it to finish, or use `pag status` (it reads the running migration's published status) and `pag pause`.",
+            "The state store at {} stayed locked by another Paganel process for more than 5 seconds.\nTry again in a moment.",
             path.display()
         ))),
     }
 }
 
-/// Open the state store, or `None` when a running migration holds the lock.
-pub fn try_open_state_store() -> Result<Option<SledStateStore>, CliError> {
+/// Open the state store, or `None` when another process keeps it locked past the busy timeout.
+fn try_open_state_store() -> Result<Option<StateStore>, CliError> {
     let path = state_dir()?;
-    SledStateStore::try_open(&path).map_err(|e| {
+    StateStore::try_open(&path).map_err(|e| {
         CliError::Unknown(format!(
             "Failed to open state store at {}: {e}",
             path.display()
