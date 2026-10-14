@@ -1,7 +1,6 @@
 use super::{open_state_store, verify::commas};
 use crate::{config, error::CliError};
 use engine_processing::EnvContext;
-use engine_state::MerkleStore;
 use model::integrity::receipt::VerificationReceipt;
 use serde::Serialize;
 use std::{collections::HashSet, sync::Arc};

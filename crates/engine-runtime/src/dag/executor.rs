@@ -19,7 +19,7 @@ use engine_processing::{
     io::{destination::Destination, source::Source},
 };
 use engine_state::models::{PauseReason, PipelineRunState, PipelineStatus, RunState, RunStatus};
-use engine_state::{RowHashLog, SledStateStore, StateStore, models::WalEntry};
+use engine_state::{RowHashLog, RunLock, StateStore, models::WalEntry};
 use engine_wasm::registry::{PluginRegistry, load_registry, plugin_columns};
 use futures::stream::{self, StreamExt};
 use model::{
@@ -50,6 +50,7 @@ pub struct DagExecutor {
     done_ops: Arc<Mutex<HashSet<String>>>,
     plugin_registry: Arc<PluginRegistry>,
     calibration: CalibrationRecorder,
+    _run_lock: RunLock,
 }
 
 impl DagExecutor {
@@ -88,9 +89,12 @@ impl DagExecutor {
         })?;
 
         let state_dir = home_dir.join(".paganel/state");
-        let state = Arc::new(SledStateStore::open(&state_dir).map_err(|e| {
+        let state = Arc::new(StateStore::open(&state_dir).map_err(|e| {
             MigrationError::InitializationError(format!("Failed to open state store: {e}"))
         })?);
+
+        // Held for the life of the executor
+        let run_lock = RunLock::acquire(&state_dir, &plan.run_id())?;
         let hash_log = Arc::new(RowHashLog::in_state_dir(&state_dir));
         let exec_ctx = ExecutionContext::new(&plan, state, hash_log, env.clone());
         let exec_config = plan.execution_config.clone();
@@ -106,6 +110,7 @@ impl DagExecutor {
             done_ops: Arc::new(Mutex::new(HashSet::new())),
             plugin_registry,
             calibration: CalibrationRecorder::new(),
+            _run_lock: run_lock,
         })
     }
 

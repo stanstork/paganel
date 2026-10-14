@@ -1,6 +1,6 @@
 use crate::{error::ProducerError, profile};
 use engine_infra::event_bus::bus::EventBus;
-use engine_state::{MerkleStore, RowHashIter, RowHashLog, RowHashScope, error::StateStoreError};
+use engine_state::{RowHashIter, RowHashLog, RowHashScope, StateStore, error::StateStoreError};
 use model::{
     events::migration::MigrationEvent,
     integrity::{
@@ -165,7 +165,7 @@ pub fn reset_row_hashes(
 pub async fn finalize_receipts(
     config: &IntegrityConfig,
     hash_log: &RowHashLog,
-    receipts: &Arc<dyn MerkleStore>,
+    receipts: &Arc<StateStore>,
     event_bus: &EventBus,
     pipeline_name: &str,
     item_id: &str,

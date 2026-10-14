@@ -12,25 +12,43 @@ use tracing::{debug, warn};
 /// Manages checkpoint and WAL operations.
 pub struct StateManager {
     ids: ItemId,
-    store: Arc<dyn StateStore>,
+    store: Arc<StateStore>,
 }
 
 impl StateManager {
-    pub fn new(ids: ItemId, store: Arc<dyn StateStore>) -> Self {
+    pub fn new(ids: ItemId, store: Arc<StateStore>) -> Self {
         Self { ids, store }
     }
 
-    /// Commit a batch by appending WAL entry.
-    pub async fn commit_batch(&self, batch_id: &str) -> Result<(), StateStoreError> {
-        self.store
-            .append_wal(&WalEntry::BatchCommit {
-                run_id: self.ids.run_id(),
-                item_id: self.ids.item_id(),
-                part_id: self.ids.part_id(),
-                batch_id: batch_id.to_string(),
-                ts: chrono::Utc::now(),
-            })
-            .await
+    /// Commit a batch: its WAL entry and its `Committed` checkpoint (resume
+    /// point `next`, running total `rows_done`), written together.
+    pub async fn commit_batch(
+        &self,
+        batch_id: &str,
+        next: &Cursor,
+        rows_done: u64,
+    ) -> Result<(), StateStoreError> {
+        let now = chrono::Utc::now();
+        let entry = WalEntry::BatchCommit {
+            run_id: self.ids.run_id(),
+            item_id: self.ids.item_id(),
+            part_id: self.ids.part_id(),
+            batch_id: batch_id.to_string(),
+            ts: now,
+        };
+        let checkpoint = Checkpoint {
+            run_id: self.ids.run_id(),
+            item_id: self.ids.item_id(),
+            part_id: self.ids.part_id(),
+            stage: CheckpointStage::Committed,
+            src_offset: next.clone(),
+            pending_offset: None,
+            batch_id: batch_id.to_string(),
+            rows_done,
+            updated_at: now,
+        };
+
+        self.store.commit_batch(&entry, &checkpoint).await
     }
 
     /// Save a checkpoint with specific stage and cursor information.

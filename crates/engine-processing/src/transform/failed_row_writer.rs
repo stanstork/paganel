@@ -154,7 +154,7 @@ impl FailedRowWriter {
 mod tests {
     use super::*;
     use engine_core::plan::execution::ExecutionPlan;
-    use engine_state::SledStateStore;
+    use engine_state::StateStore;
     use model::{core::value::Value, execution::failed_row::ProcessingStage};
     use std::collections::HashMap;
     use tempfile::NamedTempFile;
@@ -191,7 +191,7 @@ mod tests {
         let env = Arc::new(EnvContext::empty());
         let plan = ExecutionPlan::build(&doc, env.clone()).unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let state = Arc::new(SledStateStore::open(dir.path()).unwrap());
+        let state = Arc::new(StateStore::open(dir.path()).unwrap());
         let hash_log = Arc::new(engine_state::RowHashLog::in_state_dir(dir.path()));
         Arc::new(ExecutionContext::new(&plan, state, hash_log, env))
     }

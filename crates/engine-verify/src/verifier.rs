@@ -18,9 +18,7 @@ use engine_schema::{
     plan::SchemaObjectFlags,
     type_registry::{Dialect, TypeRegistry},
 };
-use engine_state::{
-    MerkleStore, PROGRESS_INTERVAL, RowHashIter, RowHashLog, RowHashScope, SledStateStore, Ticker,
-};
+use engine_state::{PROGRESS_INTERVAL, RowHashIter, RowHashLog, RowHashScope, StateStore, Ticker};
 use model::{
     execution::{
         pipeline::Pipeline,
@@ -111,14 +109,14 @@ pub async fn verify_with_progress(
     Ok(results)
 }
 
-fn init_state() -> Result<(Arc<SledStateStore>, Arc<RowHashLog>), VerifyError> {
+fn init_state() -> Result<(Arc<StateStore>, Arc<RowHashLog>), VerifyError> {
     let state_dir = dirs::home_dir()
         .ok_or_else(|| {
             VerifyError::InitializationError("Failed to determine home directory".to_string())
         })?
         .join(".paganel/state");
 
-    let state = SledStateStore::open(&state_dir)
+    let state: Arc<StateStore> = StateStore::open(&state_dir)
         .map(Arc::new)
         .map_err(|e| VerifyError::InitializationError(e.to_string()))?;
 
@@ -129,7 +127,7 @@ fn init_state() -> Result<(Arc<SledStateStore>, Arc<RowHashLog>), VerifyError> {
 async fn verify_pipeline(
     pipeline: &Pipeline,
     exec_ctx: &ExecutionContext,
-    state: &Arc<SledStateStore>,
+    state: &Arc<StateStore>,
     hash_log: &RowHashLog,
     progress: &mut dyn VerifyProgress,
     results: &mut Vec<VerificationResult>,

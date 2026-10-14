@@ -2,7 +2,7 @@ use super::open_state_store;
 use crate::{commands::apply, config, error::CliError};
 use engine_infra::shutdown::ShutdownSignal;
 use engine_processing::EnvContext;
-use engine_state::{StateStore, models::RunStatus};
+use engine_state::models::RunStatus;
 use model::execution::flags::IntegrityMode;
 use std::sync::Arc;
 

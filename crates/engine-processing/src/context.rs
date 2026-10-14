@@ -1,6 +1,6 @@
 use crate::io::{destination::Destination, source::Source};
 use engine_core::context::exec::ExecutionContext;
-use engine_state::SledStateStore;
+use engine_state::StateStore;
 use engine_wasm::registry::PluginRegistry;
 use model::{
     execution::pipeline::Pipeline, pagination::cursor::Cursor,
@@ -18,7 +18,7 @@ pub struct PipelineContext {
     pub destination: Destination,
     pub pipeline: Pipeline,
     pub mapping: TransformationMetadata,
-    pub state: Arc<SledStateStore>,
+    pub state: Arc<StateStore>,
     pub offset_strategy: Arc<dyn OffsetStrategy>,
     pub cursor: Cursor,
     pub plugin_registry: Arc<PluginRegistry>,
@@ -38,7 +38,7 @@ pub struct PipelineContextBuilder {
     destination: Option<Destination>,
     pipeline: Option<Pipeline>,
     mapping: Option<TransformationMetadata>,
-    state: Option<Arc<SledStateStore>>,
+    state: Option<Arc<StateStore>>,
     offset_strategy: Option<Arc<dyn OffsetStrategy>>,
     cursor: Option<Cursor>,
     plugin_registry: Option<Arc<PluginRegistry>>,
@@ -91,7 +91,7 @@ impl PipelineContextBuilder {
         self
     }
 
-    pub fn state(mut self, state: Arc<SledStateStore>) -> Self {
+    pub fn state(mut self, state: Arc<StateStore>) -> Self {
         self.state = Some(state);
         self
     }

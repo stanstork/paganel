@@ -686,7 +686,7 @@ Per-pipeline configuration overrides.
 
 ```ppl
 settings {
-  batch_size            = 1000
+  batch_size            = 10000
   create_missing_tables = true
   lanes                 = 4
 }
@@ -696,7 +696,7 @@ settings {
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `batch_size` | integer | `1000` | Rows per batch |
+| `batch_size` | integer | `10000` | Rows per batch. Each batch is one checkpoint and commit; larger batches cut that overhead, smaller ones resume closer to a crash |
 | `create_missing_tables` | bool | `false` | Create the destination table if it doesn't exist |
 | `create_missing_columns` | bool | `false` | Add missing columns to an existing destination table |
 | `skip_pk` | bool | `false` | Create destination tables without a primary key (and never add one) |
