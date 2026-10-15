@@ -539,7 +539,9 @@ walk expected (apply scope) and actual (verify scope) in lockstep by key:
 ? migrate_film/film - no integrity receipt (run `apply --integrity` first)
 ```
 
-The CLI also supports writing the report to a file via `--output`.
+The CLI also supports writing the report to a file via `--output`, and printing
+it as one JSON document via `--json` (see
+[output-modes.md](output-modes.md#--json-output)).
 
 ---
 
@@ -557,6 +559,9 @@ pag verify -c migration.ppl --output report.txt
 
 # Verify a table that also holds rows this run did not write
 pag verify -c migration.ppl --allow-extra
+
+# Print the result as JSON (hex roots, one entry per table)
+pag verify -c migration.ppl --json
 
 # Print the stored receipts (full table roots) - or export them as JSON
 pag receipt -c migration.ppl

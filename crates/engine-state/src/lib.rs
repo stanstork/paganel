@@ -6,11 +6,13 @@ pub mod error;
 pub mod lock;
 pub mod log;
 pub mod models;
+pub mod paths;
 pub mod store;
 pub mod ticker;
 
 pub use calibration::{CalibrationData, WriteClass};
 pub use lock::RunLock;
-pub use log::{RowHashIter, RowHashLog, RowHashScope};
+pub use log::{RowHashIter, RowHashLog, RowHashScope, fold_root};
+pub use paths::default_state_dir;
 pub use store::StateStore;
 pub use ticker::{PROGRESS_INTERVAL, Ticker};

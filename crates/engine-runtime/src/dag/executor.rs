@@ -84,11 +84,7 @@ impl DagExecutor {
         event_bus: EventBus,
         env: Arc<EnvContext>,
     ) -> Result<Self, MigrationError> {
-        let home_dir = dirs::home_dir().ok_or_else(|| {
-            MigrationError::InitializationError("Could not determine home directory".to_string())
-        })?;
-
-        let state_dir = home_dir.join(".paganel/state");
+        let state_dir = engine_state::default_state_dir()?;
         let state = Arc::new(StateStore::open(&state_dir).map_err(|e| {
             MigrationError::InitializationError(format!("Failed to open state store: {e}"))
         })?);

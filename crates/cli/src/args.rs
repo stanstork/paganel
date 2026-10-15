@@ -62,7 +62,7 @@ impl Cli {
     pub fn is_plan_mode(&self) -> bool {
         matches!(
             self.command,
-            Commands::Plan { .. } | Commands::Receipt { .. }
+            Commands::Plan { .. } | Commands::Receipt { .. } | Commands::Verify { json: true, .. }
         )
     }
 

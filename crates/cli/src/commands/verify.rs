@@ -3,14 +3,16 @@ use crossterm::execute;
 use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 use engine_processing::EnvContext;
 use engine_verify::{
-    VerifyProgress,
+    NoopProgress, VerifyProgress,
     error::VerifyError,
     verifier::{VerifyOptions, verify_with_progress},
 };
 use model::integrity::{
     receipt::root_hex,
+    report::TableReport,
     result::{DivergenceKind, VerificationResult},
 };
+use serde::Serialize;
 use std::{
     fmt::Write as _,
     fs::File,
@@ -25,6 +27,7 @@ pub async fn execute(
     config_path: Option<String>,
     output: Option<String>,
     pretty: bool,
+    json: bool,
     allow_extra: bool,
     env: Arc<EnvContext>,
 ) -> Result<(), CliError> {
@@ -32,44 +35,78 @@ pub async fn execute(
     info!(config = %config_path, "verifying migrated data");
 
     let plan = config::load_plan(&config_path, false, env.clone()).await?;
+    let options = VerifyOptions { allow_extra };
 
-    let color = pretty && !cli.no_color && stdout().is_terminal();
     let mut printer = VerifyPrinter {
         out: stdout(),
         pretty,
-        color,
+        color: pretty && !cli.no_color && stdout().is_terminal(),
     };
 
-    printer.header(&config_path);
+    let results = if json {
+        verify_with_progress(plan, env, &mut NoopProgress, options).await?
+    } else {
+        printer.header(&config_path);
+        verify_with_progress(plan, env, &mut printer, options).await?
+    };
 
-    let options = VerifyOptions { allow_extra };
-    let results = verify_with_progress(plan, env, &mut printer, options).await?;
-
-    if let Some(path) = output.as_ref() {
-        write_report(path, &results)?;
+    if let Some(path) = output {
+        write_report(&path, &results)?;
         info!(path = %path, "verification report written");
     }
 
-    printer.summary(&results);
-
-    // Check for fatal conditions
-    if results
-        .iter()
-        .any(|r| matches!(r, VerificationResult::Mismatch { .. }))
-    {
-        return Err(CliError::Verification(VerifyError::Mismatch));
+    if json {
+        let report = JsonReport::new(&config_path, &results);
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        printer.summary(&results);
     }
 
-    // A receipt with no diffable log can't confirm the destination; surface it
-    // as a non-zero exit rather than a silent pass.
-    if results
-        .iter()
-        .any(|r| matches!(r, VerificationResult::LogUnavailable { .. }))
-    {
+    let mut is_inconclusive = false;
+    for result in &results {
+        match result {
+            VerificationResult::Mismatch { .. } => {
+                return Err(CliError::Verification(VerifyError::Mismatch));
+            }
+            VerificationResult::LogUnavailable { .. } => {
+                is_inconclusive = true;
+            }
+            _ => {}
+        }
+    }
+
+    // A receipt with no diffable log can't confirm the destination.
+    if is_inconclusive {
         return Err(CliError::Verification(VerifyError::Inconclusive));
     }
 
     Ok(())
+}
+
+/// The `--json` document.
+#[derive(Serialize)]
+struct JsonReport<'a> {
+    config: &'a str,
+    /// False on any mismatch or inconclusive table; matches the exit code.
+    ok: bool,
+    tables: Vec<TableReport>,
+}
+
+impl<'a> JsonReport<'a> {
+    fn new(config: &'a str, results: &[VerificationResult]) -> Self {
+        let ok = results.iter().all(|r| {
+            !matches!(
+                r,
+                VerificationResult::Mismatch { .. } | VerificationResult::LogUnavailable { .. }
+            )
+        });
+
+        Self {
+            config,
+            ok,
+            tables: results.iter().map(TableReport::from).collect(),
+        }
+    }
 }
 
 /// Writes the plain-text report (no color) to `path`.
@@ -256,10 +293,8 @@ pub fn format_result(result: &VerificationResult) -> String {
 
             out
         }
-        VerificationResult::NoPriorRun {
-            pipeline: pipeline_name,
-        } => {
-            format!("? {pipeline_name} - no integrity receipt (run `apply --integrity` first)")
+        VerificationResult::NoPriorRun { pipeline, table } => {
+            format!("? {pipeline}/{table} - no integrity receipt (run `apply --integrity` first)")
         }
         VerificationResult::LogUnavailable {
             pipeline,
@@ -364,6 +399,7 @@ mod tests {
             },
             VerificationResult::NoPriorRun {
                 pipeline: "migrate_film".into(),
+                table: "film".into(),
             },
         ];
 
@@ -402,6 +438,7 @@ mod tests {
             },
             VerificationResult::NoPriorRun {
                 pipeline: "migrate_film".into(),
+                table: "film".into(),
             },
         ];
 
@@ -414,7 +451,7 @@ mod tests {
             out,
             "✓ migrate_actor/actor - match (200 rows, root \
              abababababababababababababababababababababababababababababababab, 45ms)\n\
-             ? migrate_film - no integrity receipt (run `apply --integrity` first)\n"
+             ? migrate_film/film - no integrity receipt (run `apply --integrity` first)\n"
         );
         for deco in ["◆", "⧗", "matched"] {
             assert!(
@@ -422,6 +459,39 @@ mod tests {
                 "plain output must not contain '{deco}'"
             );
         }
+    }
+
+    #[test]
+    fn json_report_is_ok_only_when_nothing_failed() {
+        let matched = VerificationResult::Match {
+            receipt: receipt(200),
+            duration_ms: 45,
+            extra_ignored: 0,
+        };
+        let no_receipt = VerificationResult::NoPriorRun {
+            pipeline: "migrate_film".into(),
+            table: "film".into(),
+        };
+        let inconclusive = VerificationResult::LogUnavailable {
+            pipeline: "migrate_actor".into(),
+            table: "actor".into(),
+            expected_rows: 200,
+            found_rows: 0,
+        };
+
+        let clean = vec![matched.clone(), no_receipt];
+        let json = serde_json::to_value(JsonReport::new("migration.ppl", &clean)).unwrap();
+        assert_eq!(json["config"], "migration.ppl");
+        assert_eq!(json["ok"], true);
+        assert_eq!(json["tables"][0]["result"], "match");
+        assert_eq!(json["tables"][0]["expected_root"], "ab".repeat(32));
+        assert_eq!(json["tables"][1]["result"], "no_prior_run");
+        assert_eq!(json["tables"][1]["table"], "film");
+
+        let failed = vec![matched, inconclusive];
+        let json = serde_json::to_value(JsonReport::new("migration.ppl", &failed)).unwrap();
+        assert_eq!(json["ok"], false);
+        assert_eq!(json["tables"][1]["result"], "log_unavailable");
     }
 
     #[test]

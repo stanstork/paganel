@@ -13,6 +13,7 @@ use engine_infra::shutdown::ShutdownSignal;
 use engine_processing::EnvContext;
 use engine_runtime::error::MigrationError;
 use engine_state::error::StateStoreError;
+use engine_verify::error::VerifyError;
 use std::{process, sync::Arc};
 use tracing::info;
 
@@ -89,7 +90,8 @@ fn handle_error(error: CliError) -> i32 {
             2
         }
         CliError::Runner(MigrationError::StateStore(e @ StateStoreError::RunLocked { .. }))
-        | CliError::Migration(MigrationError::StateStore(e @ StateStoreError::RunLocked { .. })) => {
+        | CliError::Migration(MigrationError::StateStore(e @ StateStoreError::RunLocked { .. }))
+        | CliError::Verification(VerifyError::Store(e @ StateStoreError::RunLocked { .. })) => {
             eprintln!("{e}");
             1
         }
