@@ -12,7 +12,6 @@ engine-schema = { path = "../engine-schema" }
 connectors = { path = "../connectors" }
 query-builder = { path = "../query-builder" }
 
-dirs = "6.0.0"
 tokio = { version = "1.43.0", features = ["full"] }
 thiserror = "2.0.12"
 tracing = "0.1"

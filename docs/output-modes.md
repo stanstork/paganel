@@ -14,6 +14,7 @@ terminal, or a live migration you want to watch).
   - [`--tui` mode](#--tui-mode)
 - [The TUI dashboard](#the-tui-dashboard)
   - [Estimated vs actual row counts](#estimated-vs-actual-row-counts)
+  - [Throughput, peak, and ETA](#throughput-peak-and-eta)
   - [Keyboard controls](#keyboard-controls)
   - [Pause, resume, and cancel](#pause-resume-and-cancel)
   - [Responsive columns](#responsive-columns)
@@ -23,6 +24,7 @@ terminal, or a live migration you want to watch).
 - [verify output](#verify-output)
   - [Default output](#default-output)
   - [`--pretty` output](#--pretty-output)
+  - [`--json` output](#--json-output)
 - [receipt output](#receipt-output)
 - [Colors and `--no-color`](#colors-and---no-color)
 - [Choosing a mode](#choosing-a-mode)
@@ -307,8 +309,8 @@ and leaves the ones that already finished alone; no `reset` needed.
 
 ## verify output
 
-`verify` streams one line per table as it checks each pipeline's destination
-against its stored receipt. It has two output modes.
+`verify` checks each pipeline's destination against its stored receipt and
+reports one result per table. It has three output modes.
 
 ### Default output
 
@@ -322,7 +324,7 @@ pag verify -c migration.ppl
 
 ```
 ✓ migrate_actor/actor - match (200 rows, root abababababababababababababababababababababababababababababababab, 45ms)
-? migrate_film - no integrity receipt (run `apply --integrity` first)
+? migrate_film/film - no integrity receipt (run `apply --integrity` first)
 ```
 
 A mismatch expands to the divergences (missing / changed / extra), capped with a
@@ -359,12 +361,62 @@ pag verify -c migration.ppl --pretty
     sorting row hashes…
     comparing…
 ✓ migrate_actor/actor - match (200 rows, root abababababababababababababababababababababababababababababababab, 45ms)
-? migrate_film - no integrity receipt (run `apply --integrity` first)
+? migrate_film/film - no integrity receipt (run `apply --integrity` first)
 ✓ 1 matched, 1 without a receipt
 ```
 
 Like `apply --pretty`, this mode routes raw logs to `~/.paganel/pretty.log` to
 keep the terminal output clean.
+
+### `--json` output
+
+`--json` prints one JSON document to stdout once every table is checked. It
+prints no progress lines, and routine logs are suppressed as with `plan` (`-v`
+sends them to stderr). It can't be combined with `--pretty`, and it exits with
+the same code as the default output. `--output <file>` still writes the text
+report.
+
+```bash
+pag verify -c migration.ppl --json | jq '.tables[] | select(.result != "match")'
+```
+
+```json
+{
+  "config": "migration.ppl",
+  "ok": false,
+  "tables": [
+    {
+      "pipeline": "migrate_actor",
+      "table": "actor",
+      "result": "mismatch",
+      "expected_rows": 200,
+      "actual_rows": 199,
+      "missing": 1,
+      "changed": 1,
+      "extra": 0,
+      "extra_ignored": 0,
+      "expected_root": "2424b83c…",
+      "actual_root": "137d7a95…",
+      "divergences": [
+        { "key": "actor_id=7", "kind": "changed", "expected_hash": "c110bb7d…", "actual_hash": "72120fc5…" },
+        { "key": "actor_id=8", "kind": "missing", "expected_hash": "9b0e41d2…", "actual_hash": null }
+      ],
+      "duration_ms": 28,
+      "message": null
+    }
+  ]
+}
+```
+
+Roots and hashes are full 64-character hex strings (shortened above).
+
+- `result` is one of `match`, `mismatch`, `no_prior_run` or `log_unavailable`.
+- `ok` is false when any table is `mismatch` or `log_unavailable`.
+- `divergences` holds at most the first 100 rows; `missing + changed + extra`
+  is the full count.
+- `actual_rows` is `null` when the table wasn't compared (`no_prior_run`,
+  `log_unavailable`), and `message` says why for `log_unavailable`.
+- `extra_ignored` counts the destination rows that `--allow-extra` accepted.
 
 ---
 
@@ -452,7 +504,8 @@ uncolored output.
   `--tui` for a live dashboard with controls.
 - **Long or large migrations you want to steer** -> `--tui`, so you can pause and
   checkpoint (`Space`) or cancel (`c`) without losing written data.
-- **Scripting `verify`** -> default output, or `--output report.txt` for the same
-  text on disk; check the exit code for pass/fail/inconclusive.
+- **Scripting `verify`** -> `--json` for a parseable result, or the default
+  output / `--output report.txt` for text; check the exit code for
+  pass/fail/inconclusive.
 - **Recording receipts** -> `pag receipt --json > receipts.json` right after
   `apply --integrity`, and commit or attach the file.

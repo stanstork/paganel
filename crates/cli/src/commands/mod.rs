@@ -18,13 +18,9 @@ pub mod status;
 pub mod verify;
 pub mod version;
 
-const STATE_DIR: &str = ".paganel/state";
-
 /// Returns the path to the state directory (~/.paganel/state/).
 pub fn state_dir() -> Result<PathBuf, CliError> {
-    let home = dirs::home_dir()
-        .ok_or_else(|| CliError::Unknown("Could not determine home directory".to_string()))?;
-    Ok(home.join(STATE_DIR))
+    engine_state::default_state_dir().map_err(|e| CliError::Unknown(e.to_string()))
 }
 
 /// Whether the saved run state for `run_id` is already `Completed`.
@@ -214,6 +210,9 @@ pub enum Commands {
         #[arg(long, help = "Run with pretty colored output")]
         pretty: bool,
 
+        #[arg(long, conflicts_with = "pretty")]
+        json: bool,
+
         #[arg(
             long,
             help = "Accept destination rows the receipt does not cover (data that was already there, or another run's rows) instead of failing on them"
@@ -331,6 +330,7 @@ pub async fn execute_command(
             config,
             output,
             pretty,
+            json,
             allow_extra,
         } => {
             verify::execute(
@@ -338,6 +338,7 @@ pub async fn execute_command(
                 config.clone(),
                 output.clone(),
                 *pretty,
+                *json,
                 *allow_extra,
                 env.clone(),
             )

@@ -20,8 +20,8 @@ pub enum VerificationResult {
         divergences: Vec<Divergence>,
         duration_ms: u64,
     },
-    /// No receipt found in Sled - pipeline was run without --integrity.
-    NoPriorRun { pipeline: String },
+    /// No receipt for this table - the pipeline ran without `--integrity`.
+    NoPriorRun { pipeline: String, table: String },
     /// A receipt exists, but the row-hash log it must be diffed against is
     /// missing or truncated.
     LogUnavailable {

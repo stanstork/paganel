@@ -10,9 +10,12 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
+mod fold;
 mod merge;
 mod record;
 mod sort;
+
+pub use fold::fold_root;
 
 /// Which side of a verification a set of row hashes belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

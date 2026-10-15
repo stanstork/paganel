@@ -5,5 +5,6 @@ pub mod config;
 pub mod hasher;
 pub mod merkle;
 pub mod receipt;
+pub mod report;
 pub mod result;
 pub mod row_key;

@@ -21,7 +21,7 @@ pub enum StateStoreError {
     Storage(String),
 
     #[error(
-        "A migration for this config is already running (run {run_id}).\n
+        "Another apply, resume or verify of this config is already running (run {run_id}).\n
         Wait for it to finish, or use `pag status` and `pag pause`."
     )]
     RunLocked { run_id: String },
