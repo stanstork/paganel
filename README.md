@@ -106,7 +106,7 @@ mapping, dependency ordering, resumability, or verification.
 - **Dry run** - `plan` shows output columns and types, the execution DAG, the exact DDL (`--ddl`), and duration/memory estimates
 - **Schema migration** - CREATE TABLE, indexes, foreign keys, ENUMs, sequences
 - **Graph expansion** - auto-discover and migrate FK-dependent tables
-- **Crash recovery** - sled-backed checkpoints, automatic resume
+- **Crash recovery** - SQLite-backed checkpoints, automatic resume
 - **WASM plugins** - sandboxed transform / filter / source / sink plugins in native Rust or JavaScript
 - **Transformations** - field mapping, computed columns, `when` expressions, functions
 - **Data quality** - `validate` blocks with per-row `assert` / `warn` rules
@@ -191,11 +191,12 @@ non-critical workloads; don't leave it unattended in production yet.
   CSV is supported as a source only.
 - **Snapshot/batch migration only** - change-data-capture (CDC) is planned but
   not implemented.
-- **Single-node:** execution and state (sled) are local to one machine; there is
+- **Single-node:** execution and state (SQLite) are local to one machine; there is
   no distributed/coordinated mode.
-- **One run at a time:** the state store is a single-process embedded database,
-  so a second `apply` (or `verify`, `receipt`, `reset`) while a migration is
-  running is refused. `status` and `pause` work during a run.
+- **One run per config at a time:** `apply`, `resume` and `verify` lock the
+  config's run, so a second one of the same config is refused while the first
+  runs. Different configs don't block each other, and `status`, `receipt` and
+  `pause` work during a run.
 - **Plugin host functions** (outbound HTTP, key-value, metrics) are
   capability-gated and off by default. Outbound HTTP is guarded (link-local/
   cloud-metadata blocked, per-request timeout, response-size cap, optional host
@@ -323,13 +324,12 @@ pag reset  -c migration.ppl   # clear all state for a migration (--force skips t
 pag plugin --help
 ```
 
-> **One migration at a time.** The state store (`~/.paganel/state/`) is a
-> single-process embedded database, so while a migration runs, a second `pag
-> apply` (or `verify`, `receipt`, `reset`) fails with a clear message instead
-> of opening it. `status` and `pause` are built for that moment and work
-> anyway: a running migration publishes its run status beside the store for
-> `pag status` to read, and `pag pause` requests the pause through a sentinel
-> file.
+> **One run per config.** `pag apply`, `resume` and `verify` lock the config's
+> run (a file in `~/.paganel/state/locks/`), so while one runs, a second of the
+> same config fails with a clear message. The state store is SQLite in WAL mode,
+> so other commands can read it during a run: `pag status` shows the live
+> checkpoints, `receipt` lists receipts, and `pag pause` requests the pause
+> through a sentinel file.
 
 > **`plan` summary vs `--json`.** The default `plan` output is a compact human
 > summary. `--json` emits the complete report it's built from - every column
@@ -541,7 +541,7 @@ Integrity costs ~0.3-0.5 µs per row, and the hashes stream to disk rather than 
 
 ## State & Resume
 
-Paganel stores pipeline state in `~/.paganel/state/` (sled embedded KV). If a migration is interrupted, re-running the same command resumes from the last checkpoint. The write sequence per batch is: checkpoint (`write`) -> commit the batch to the destination -> append a commit record to the WAL -> checkpoint (`committed`). A crash between the destination commit and the WAL append makes resume re-read and re-write that one batch, so recovery is at-least-once at batch granularity for a single batch. With a primary key and `on_conflict` set the replay is idempotent; with a plain COPY into a keyed table it fails on the duplicate key rather than silently duplicating; without a primary key the batch's rows can be duplicated.
+Paganel stores pipeline state in `~/.paganel/state/state.db` (SQLite, WAL mode). If a migration is interrupted, re-running the same command resumes from the last checkpoint. The write sequence per batch is: checkpoint (`write`) -> commit the batch to the destination -> one SQLite transaction that appends a commit record to the run's WAL and moves the checkpoint to `committed`. A crash between the destination commit and that transaction makes resume re-read and re-write that one batch, so recovery is at-least-once at batch granularity for a single batch. With a primary key and `on_conflict` set the replay is idempotent; with a plain COPY into a keyed table it fails on the duplicate key rather than silently duplicating; without a primary key the batch's rows can be duplicated.
 
 If a pipeline fails, the run is recorded as failed rather than completed, and re-running retries that pipeline while skipping the ones that already finished. Integrity receipts are stored in the same directory under `receipt:{pipeline}:{table}` keys.
 

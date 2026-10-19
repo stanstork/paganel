@@ -212,7 +212,8 @@ mod tests {
     #[tokio::test]
     async fn reports_snapshot_stage_with_checkpoint() {
         let dir = tempdir().unwrap();
-        let store: Arc<StateStore> = Arc::new(StateStore::open(dir.path()).expect("open sled"));
+        let store: Arc<StateStore> =
+            Arc::new(StateStore::open(dir.path()).expect("open state store"));
         let service = ProgressService::new(store.clone());
 
         store
@@ -255,7 +256,8 @@ mod tests {
     #[tokio::test]
     async fn reports_done_stage_when_item_finished() {
         let dir = tempdir().unwrap();
-        let store: Arc<StateStore> = Arc::new(StateStore::open(dir.path()).expect("open sled"));
+        let store: Arc<StateStore> =
+            Arc::new(StateStore::open(dir.path()).expect("open state store"));
         let service = ProgressService::new(store.clone());
 
         store
@@ -274,7 +276,8 @@ mod tests {
     #[tokio::test]
     async fn reports_failed_stage_when_breaker_tripped() {
         let dir = tempdir().unwrap();
-        let store: Arc<StateStore> = Arc::new(StateStore::open(dir.path()).expect("open sled"));
+        let store: Arc<StateStore> =
+            Arc::new(StateStore::open(dir.path()).expect("open state store"));
         let service = ProgressService::new(store.clone());
 
         store
