@@ -228,7 +228,7 @@ mod tests {
     }
 
     /// Build a store-shaped iterator: entries must be in ascending key order,
-    /// exactly as sled yields them.
+    /// exactly as the row-hash log yields them.
     fn iter(rows: &[(&[u8], u8)]) -> RowHashIter {
         let mut owned: Vec<KeyedRowHash> = rows
             .iter()

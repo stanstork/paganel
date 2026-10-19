@@ -446,7 +446,7 @@ run_paganel() { # $1 workload, $2 config, $3 dest db, $4 extra flags, $5 log pre
         return
     fi
 
-    # Native: isolate paganel's sled state under a throwaway HOME per run.
+    # Native: isolate paganel's state store under a throwaway HOME per run.
     local run_home="$RESULTS/$5.home"
     mkdir -p "$run_home"
     env HOME="$run_home" "${PAGANEL_ENV[@]}" \

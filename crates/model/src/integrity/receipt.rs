@@ -2,7 +2,7 @@ use crate::integrity::algorithm::HashAlgorithm;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// Written to Sled when a pipeline completes. Loaded by engine-verify.
+/// Written to the state store when a pipeline completes. Loaded by engine-verify.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerificationReceipt {
     pub run_id: String,

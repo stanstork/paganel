@@ -555,7 +555,7 @@ impl DagExecutor {
         Ok(())
     }
 
-    /// Mark a pipeline as completed in the RunState and persist to sled.
+    /// Mark a pipeline as completed in the RunState and persist it.
     async fn mark_pipeline_completed(
         &self,
         name: &str,
