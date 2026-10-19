@@ -301,7 +301,7 @@ pag apply -c migration.ppl --pretty
 # Execute and commit a keyed Merkle integrity receipt
 pag apply -c migration.ppl --integrity
 
-# Verify destination matches stored receipt
+# Verify destination matches stored receipt (exits 3 on a mismatch, 4 if inconclusive)
 pag verify -c migration.ppl
 
 # Verify and write report to file
