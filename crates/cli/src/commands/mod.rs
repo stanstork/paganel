@@ -192,6 +192,7 @@ pub enum Commands {
         integrity: bool,
     },
     /// Check the destination against the integrity receipts from `apply --integrity` (no source connection)
+    #[command(after_help = "Exit codes: 0 match, 1 error, 3 mismatch, 4 inconclusive")]
     Verify {
         #[arg(
             short = 'c',

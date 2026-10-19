@@ -339,9 +339,16 @@ A mismatch expands to the divergences (missing / changed / extra), capped with a
 
 **Marker meanings:** `✓` match · `✗` mismatch · `?` inconclusive or no receipt.
 
-**Exit codes:** any mismatch exits non-zero; so does an *inconclusive* result
-(the receipt exists but its row-hash log is missing or truncated), rather than
-passing silently.
+**Exit codes:**
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Every table with a receipt matched. Tables without a receipt don't fail the run. |
+| 1 | Error: config, connection, state store, or another run of this config holds the lock. |
+| 3 | At least one table mismatched. |
+| 4 | Nothing mismatched, but at least one table was inconclusive (its row-hash log is missing or truncated). |
+
+A mismatch outranks inconclusive: a run with both exits 3.
 
 ### `--pretty` output
 

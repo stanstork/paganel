@@ -103,6 +103,8 @@ fn handle_error(error: CliError) -> i32 {
             eprintln!("Error: connection failed");
             1
         }
+        CliError::Verification(VerifyError::Mismatch) => 3,
+        CliError::Verification(VerifyError::Inconclusive) => 4,
         _ => {
             // Print to stderr so the failure is visible even in --tui/--pretty
             // modes, where tracing is routed to a log file.

@@ -282,13 +282,17 @@ exports them as text you can commit or attach (see
   missing or truncated (cleared by hand, or `verify` run against a different
   state directory than the one `apply` wrote to). The destination cannot be
   diffed against the committed set, so the result is **inconclusive**: `verify`
-  exits non-zero rather than reporting every intact row as `extra`. Re-run
+  exits 4 rather than reporting every intact row as `extra`. Re-run
   `apply --integrity` to rebuild the log.
 
 A mismatch also lists individual diverging rows by key (`actor_id=42`), each
 tagged missing / extra / changed. The counts are always complete; only that
 detail list is capped, at 100 rows, so a fully-diverged table cannot produce an
 unbounded report.
+
+`verify` exits 0 when every table with a receipt matched, 3 on any mismatch, 4
+when a table is inconclusive and none mismatched, and 1 on an error; see
+[output-modes.md](output-modes.md#default-output) for the table.
 
 ---
 
@@ -614,7 +618,7 @@ finished set rather than as rows stream past.
 | Rows deleted after migration | Reported as `missing`, named by key. |
 | Row modified after migration | Reported as `changed`, named by key, with both hashes. |
 | `NoPriorRun` | Pipeline ran without `--integrity`. Not an error. |
-| Receipt present, row-hash log missing/truncated | `LogUnavailable` - inconclusive, `verify` exits non-zero rather than reporting a false mismatch. Re-run `apply --integrity`. |
+| Receipt present, row-hash log missing/truncated | `LogUnavailable` - inconclusive, `verify` exits 4 rather than reporting a false mismatch. Re-run `apply --integrity`. |
 | Destination table with no primary key | Rows key by their own hash; a warning is logged. Duplicate identical rows are indistinguishable. |
 | Multiple pipelines (DAG) | Each pipeline verifies independently. Results are collected in execution order. |
 | Many null columns | Null-heavy rows serialize compactly (`0x00` per null column). |
