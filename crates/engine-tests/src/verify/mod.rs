@@ -273,6 +273,7 @@ mod tests {
         let req = ImportRequest {
             name: "actor_dst".into(),
             connection: pipeline.destination.connection.name.clone(),
+            target: None,
             table: table.clone(),
             key_override: None,
         };
@@ -345,6 +346,7 @@ mod tests {
         let request = |name: &str, key: Option<Vec<String>>| ImportRequest {
             name: name.into(),
             connection: connection.name.clone(),
+            target: None,
             table: "no_key".into(),
             key_override: key,
         };

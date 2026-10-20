@@ -16,4 +16,12 @@ ignore = [
     # pins rkyv to ^0.7, so it can't be bumped to the fixed 0.8.17 without an
     # upstream release. Revisit when rust_decimal moves to rkyv 0.8.
     "RUSTSEC-2026-0235",
+
+    # RUSTSEC-2026-0381 (webpki-roots 0.26.11) - FALSE POSITIVE.
+    # 0.26.11 is a semver-trick release that only re-exports webpki-roots v1
+    # (`cargo tree -p webpki-roots@0.26.11` shows it depending on 1.0.10, the
+    # fixed version), so the roots it hands out are the fixed set. It is pulled
+    # in by ureq 2.x (engine-wasm), and no fixed 0.26 exists. The direct 1.x
+    # entry is patched.
+    "RUSTSEC-2026-0381",
 ]
