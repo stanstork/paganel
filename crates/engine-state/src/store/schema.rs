@@ -3,7 +3,10 @@ use crate::store::{to_sqlite, to_storage};
 use rusqlite::{Connection, TransactionBehavior};
 use std::cmp::Ordering;
 
-const MIGRATIONS: &[&str] = &[include_str!("migrations/0001_init.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("migrations/0001_init.sql"),
+    include_str!("migrations/0002_imports.sql"),
+];
 
 /// Bring the schema up to date.
 pub(super) fn migrate(conn: &mut Connection) -> Result<(), StateStoreError> {
