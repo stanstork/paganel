@@ -114,6 +114,7 @@ mod tests {
         ImportRecord {
             name: name.into(),
             connection: "prod".into(),
+            target: Some("postgres://db.internal:5432/app".into()),
             table: table.into(),
             key_columns: vec!["id".into()],
             imported_at: chrono::Utc::now(),
