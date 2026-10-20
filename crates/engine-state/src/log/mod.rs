@@ -259,7 +259,7 @@ impl RowHashLog {
 fn sanitize(name: &str) -> String {
     name.chars()
         .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '@') {
                 c
             } else {
                 '_'
@@ -457,5 +457,11 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn reserved_names_get_their_own_directory() {
+        assert_eq!(sanitize("@import/orders"), "@import_orders");
+        assert_ne!(sanitize("@import/orders"), sanitize("_import_orders"));
     }
 }

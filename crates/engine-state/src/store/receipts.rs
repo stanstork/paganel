@@ -2,27 +2,15 @@ use crate::error::StateStoreError;
 use crate::store::StateStore;
 use crate::store::{to_ser, to_sqlite};
 use model::integrity::receipt::VerificationReceipt;
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 /// Persistence for verification receipts.
 impl StateStore {
     /// Persist a `VerificationReceipt` after a pipeline completes with --integrity.
     pub async fn save_receipt(&self, receipt: &VerificationReceipt) -> Result<(), StateStoreError> {
-        let pipeline = receipt.pipeline_name.clone();
-        let table = receipt.table_name.clone();
-        let value = serde_json::to_string(receipt).map_err(to_ser)?;
-
-        self.with_conn(move |conn| {
-            conn.prepare_cached(
-                "INSERT INTO receipts (pipeline, table_name, receipt) VALUES (?1, ?2, ?3)
-                 ON CONFLICT (pipeline, table_name) DO UPDATE SET receipt = excluded.receipt",
-            )
-            .map_err(to_sqlite)?
-            .execute(params![pipeline, table, value])
-            .map_err(to_sqlite)?;
-            Ok(())
-        })
-        .await
+        let receipt = receipt.clone();
+        self.with_conn(move |conn| upsert_receipt(conn, &receipt))
+            .await
     }
 
     /// Load the receipt written by the most recent `apply --integrity` run
@@ -82,15 +70,39 @@ impl StateStore {
     /// returning the count of deleted receipts.
     pub async fn delete_receipts(&self, pipeline_name: &str) -> Result<usize, StateStoreError> {
         let pipeline = pipeline_name.to_string();
-
-        self.with_conn(move |conn| {
-            conn.prepare_cached("DELETE FROM receipts WHERE pipeline = ?1")
-                .map_err(to_sqlite)?
-                .execute(params![pipeline])
-                .map_err(to_sqlite)
-        })
-        .await
+        self.with_conn(move |conn| delete_pipeline_receipts(conn, &pipeline))
+            .await
     }
+}
+
+/// Insert or replace one receipt. Takes a connection so it can join a
+/// caller's transaction (a `Transaction` derefs to `Connection`).
+pub(super) fn upsert_receipt(
+    conn: &Connection,
+    receipt: &VerificationReceipt,
+) -> Result<(), StateStoreError> {
+    let value = serde_json::to_string(receipt).map_err(to_ser)?;
+
+    conn.prepare_cached(
+        "INSERT INTO receipts (pipeline, table_name, receipt) VALUES (?1, ?2, ?3)
+         ON CONFLICT (pipeline, table_name) DO UPDATE SET receipt = excluded.receipt",
+    )
+    .map_err(to_sqlite)?
+    .execute(params![receipt.pipeline_name, receipt.table_name, value])
+    .map_err(to_sqlite)?;
+
+    Ok(())
+}
+
+/// Delete every receipt of `pipeline`, returning how many there were.
+pub(super) fn delete_pipeline_receipts(
+    conn: &Connection,
+    pipeline: &str,
+) -> Result<usize, StateStoreError> {
+    conn.prepare_cached("DELETE FROM receipts WHERE pipeline = ?1")
+        .map_err(to_sqlite)?
+        .execute(params![pipeline])
+        .map_err(to_sqlite)
 }
 
 #[cfg(test)]

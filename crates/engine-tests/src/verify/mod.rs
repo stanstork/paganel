@@ -11,8 +11,8 @@ mod tests {
     use engine_processing::EnvContext;
     use engine_state::{RowHashScope, fold_root};
     use engine_verify::{
-        HashSink, NoopProgress, VerifyOptions, VerifyState, hash_table, spec_from_table, verify,
-        verify_with_progress,
+        HashSink, ImportRequest, NoopProgress, VerifyOptions, VerifyState, error::VerifyError,
+        hash_table, import_table, spec_from_table, verify, verify_with_progress,
     };
     use model::integrity::result::{DivergenceKind, VerificationResult};
     use ppl_syntax::builder::parse;
@@ -238,6 +238,151 @@ mod tests {
         assert_eq!(root, receipt.table_root, "same rows, same spec, same root");
 
         state.hash_log.clear_pipeline(log_name).expect("cleanup");
+    }
+
+    /// `state import` hashes a table the way apply hashes its destination: an
+    /// import of a migrated table reproduces apply's receipt, under the
+    /// import's own pipeline name, and `delete_import` takes the receipt away.
+    #[traced_test]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn importing_a_migrated_table_reproduces_its_receipt() {
+        reset_postgres_schema().await;
+        let ppl = verify_config!("actor.ppl");
+        run_ppl(&ppl, true).await.expect("apply failed");
+
+        let doc = parse(&ppl).expect("parse");
+        let env = Arc::new(EnvContext::empty());
+        let plan = ExecutionPlan::build(&doc, env.clone()).expect("build plan");
+        let pipeline = &plan.pipelines[0];
+        let table = pipeline.destination.table.clone();
+
+        let state = VerifyState::open_default().expect("state");
+        let applied = state
+            .store
+            .load_receipt(&pipeline.name, &table)
+            .await
+            .expect("load receipt")
+            .expect("apply --integrity writes a receipt");
+
+        let ctx = ExecutionContext::new(&plan, state.store.clone(), state.hash_log.clone(), env);
+        let driver = ctx
+            .resolve_driver(&pipeline.destination.connection)
+            .await
+            .expect("driver");
+
+        let req = ImportRequest {
+            name: "actor_dst".into(),
+            connection: pipeline.destination.connection.name.clone(),
+            table: table.clone(),
+            key_override: None,
+        };
+        let (receipt, record) = import_table(&driver, &req, &state, &mut NoopProgress)
+            .await
+            .expect("import");
+
+        assert_eq!(receipt.pipeline_name, "@import/actor_dst");
+        assert_eq!(receipt.table_root, applied.table_root);
+        assert_eq!(receipt.total_rows, applied.total_rows);
+        assert_eq!(receipt.column_order, applied.column_order);
+        assert_eq!(record.rows, applied.total_rows);
+        assert_eq!(record.connection, pipeline.destination.connection.name);
+
+        let stored = state.store.load_import("actor_dst").await.expect("load");
+        assert_eq!(stored, Some(record));
+        assert!(
+            state
+                .store
+                .load_receipt("@import/actor_dst", &table)
+                .await
+                .expect("load receipt")
+                .is_some()
+        );
+
+        assert!(
+            state
+                .store
+                .delete_import("actor_dst")
+                .await
+                .expect("delete")
+        );
+        state
+            .hash_log
+            .clear_pipeline("@import/actor_dst")
+            .expect("cleanup");
+        assert!(
+            state
+                .store
+                .load_receipt("@import/actor_dst", &table)
+                .await
+                .expect("load receipt")
+                .is_none()
+        );
+    }
+
+    /// A table without a primary key needs `--key`, and invalid names are
+    /// refused before anything is read.
+    #[traced_test]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn import_requires_a_key_and_a_valid_name() {
+        reset_postgres_schema().await;
+        let ppl = verify_config!("actor.ppl");
+        run_ppl(&ppl, true).await.expect("apply failed");
+        execute(
+            "CREATE TABLE no_key (code TEXT, label TEXT); \
+             INSERT INTO no_key VALUES ('a', 'one'), ('b', 'two');",
+        )
+        .await;
+
+        let doc = parse(&ppl).expect("parse");
+        let env = Arc::new(EnvContext::empty());
+        let plan = ExecutionPlan::build(&doc, env.clone()).expect("build plan");
+        let connection = &plan.pipelines[0].destination.connection;
+
+        let state = VerifyState::open_default().expect("state");
+        let ctx = ExecutionContext::new(&plan, state.store.clone(), state.hash_log.clone(), env);
+        let driver = ctx.resolve_driver(connection).await.expect("driver");
+
+        let request = |name: &str, key: Option<Vec<String>>| ImportRequest {
+            name: name.into(),
+            connection: connection.name.clone(),
+            table: "no_key".into(),
+            key_override: key,
+        };
+
+        let err = import_table(&driver, &request("no_key", None), &state, &mut NoopProgress)
+            .await
+            .expect_err("no primary key and no --key");
+        assert!(
+            matches!(err, VerifyError::NoKey(ref t) if t == "no_key"),
+            "{err}"
+        );
+
+        let err = import_table(
+            &driver,
+            &request("sales.no_key", None),
+            &state,
+            &mut NoopProgress,
+        )
+        .await
+        .expect_err("invalid name");
+        assert!(err.to_string().contains("invalid import name"), "{err}");
+
+        let (receipt, _) = import_table(
+            &driver,
+            &request("no_key", Some(vec!["code".into()])),
+            &state,
+            &mut NoopProgress,
+        )
+        .await
+        .expect("import with --key");
+        assert_eq!(receipt.key_columns, ["code"]);
+        assert_eq!(receipt.total_rows, 2);
+
+        state.store.delete_import("no_key").await.expect("delete");
+        state
+            .hash_log
+            .clear_pipeline("@import/no_key")
+            .expect("cleanup");
     }
 
     /// Verify holds the run's lock, so it cannot run beside an apply, resume

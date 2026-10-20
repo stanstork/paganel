@@ -3,6 +3,7 @@ pub mod canonical;
 pub mod coerce;
 pub mod config;
 pub mod hasher;
+pub mod import;
 pub mod merkle;
 pub mod receipt;
 pub mod report;
