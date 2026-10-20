@@ -23,6 +23,7 @@ mod compile;
 mod config;
 mod env;
 mod error;
+mod format;
 mod logger;
 mod plan;
 mod pretty_printer;

@@ -207,17 +207,17 @@ mod tests {
         assert_eq!(spec.column_order, receipt.column_order);
         assert_eq!(spec.key_columns, receipt.key_columns);
 
-        // A log name of its own, so the apply set is left untouched.
+        // A log name of its own, so the baseline set is left untouched.
         let log_name = "@test/reproduce";
         let sink = HashSink {
             log: &state.hash_log,
-            scope: RowHashScope::Apply,
+            scope: RowHashScope::Baseline,
             pipeline: log_name,
             table: &table,
         };
         state
             .hash_log
-            .clear(RowHashScope::Apply, log_name, &table)
+            .clear(RowHashScope::Baseline, log_name, &table)
             .expect("clear");
         let rows = hash_table(&driver, meta, &spec, &sink, None)
             .await
@@ -225,11 +225,11 @@ mod tests {
 
         state
             .hash_log
-            .seal(RowHashScope::Apply, log_name, &table)
+            .seal(RowHashScope::Baseline, log_name, &table)
             .expect("seal");
         let stream = state
             .hash_log
-            .stream(RowHashScope::Apply, log_name, &table)
+            .stream(RowHashScope::Baseline, log_name, &table)
             .expect("stream");
         let (leaves, root) = fold_root(stream, spec.algorithm).expect("fold");
 

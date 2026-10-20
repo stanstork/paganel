@@ -72,7 +72,7 @@ impl IntegrityState {
         let t_store = Instant::now();
         for (table_idx, entries) in hashed {
             self.hash_log.append(
-                RowHashScope::Apply,
+                RowHashScope::Baseline,
                 &self.pipeline,
                 &self.table_names[table_idx],
                 &entries,
@@ -149,7 +149,7 @@ pub fn reset_row_hashes(
     pipeline: &str,
 ) -> Result<(), StateStoreError> {
     for table in config.tables.keys() {
-        hash_log.clear(RowHashScope::Apply, pipeline, table)?;
+        hash_log.clear(RowHashScope::Baseline, pipeline, table)?;
     }
     Ok(())
 }
@@ -193,11 +193,11 @@ pub async fn finalize_receipts(
 
         let (total_rows, table_root) = tokio::task::block_in_place(|| {
             let t_seal = Instant::now();
-            hash_log.seal(RowHashScope::Apply, pipeline_name, table)?;
+            hash_log.seal(RowHashScope::Baseline, pipeline_name, table)?;
             profile::record_stage("integrity: seal (sort)", t_seal.elapsed());
 
             let t_fold = Instant::now();
-            let iter = hash_log.stream(RowHashScope::Apply, pipeline_name, table)?;
+            let iter = hash_log.stream(RowHashScope::Baseline, pipeline_name, table)?;
             let folded = fold_root(iter, algorithm)?;
             profile::record_stage("integrity: merkle fold", t_fold.elapsed());
 

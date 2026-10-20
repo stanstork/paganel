@@ -14,6 +14,7 @@ pub mod plugin;
 pub mod receipt;
 pub mod reset;
 pub mod resume;
+pub mod state;
 pub mod status;
 pub mod verify;
 pub mod version;
@@ -69,7 +70,7 @@ pub enum SampleMethod {
     Id,
 }
 
-#[derive(clap::Subcommand)]
+#[derive(Subcommand)]
 pub enum PluginCmd {
     /// Compile a JavaScript plugin to WASM.
     Compile {
@@ -117,6 +118,33 @@ pub enum PluginCmd {
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Subcommand)]
+pub enum StateCmd {
+    /// Hash a table Paganel did not migrate and store it as a baseline for drift.
+    Import {
+        #[arg(short = 'c', long)]
+        config: Option<String>,
+        /// Connection block name in the config; optional when the config has exactly one.
+        #[arg(long)]
+        connection: Option<String>,
+        #[arg(long)]
+        table: String,
+        /// Defaults to the table name when it is a valid import name.
+        #[arg(long)]
+        name: Option<String>,
+        /// Key columns when the table has no primary key (comma-separated).
+        #[arg(long, value_delimiter = ',')]
+        key: Vec<String>,
+    },
+    /// List imported tables.
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove an import: its record, receipt and row hashes.
+    Rm { name: String },
 }
 
 #[derive(Subcommand)]
@@ -298,6 +326,11 @@ pub enum Commands {
         #[command(subcommand)]
         cmd: PluginCmd,
     },
+    /// Drift baselines for tables Paganel did not migrate: import, list, remove.
+    State {
+        #[command(subcommand)]
+        cmd: StateCmd,
+    },
 }
 
 /// Executes the appropriate command based on CLI arguments
@@ -364,5 +397,6 @@ pub async fn execute_command(
         Commands::Pause { config } => pause::execute(Some(config.clone()), env).await,
         Commands::Receipt { config, json } => receipt::execute(config.clone(), *json, env).await,
         Commands::Plugin { cmd } => plugin::run(cmd, env.clone()).await,
+        Commands::State { cmd } => state::run(cmd, env.clone()).await,
     }
 }

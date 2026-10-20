@@ -11,7 +11,7 @@ pub mod table;
 pub mod verifier;
 
 pub use diff::{DiffInput, DiffOutcome, diff_keyed_sets};
-pub use import::{ImportRequest, import_table};
+pub use import::{ImportRequest, connection_target, import_table};
 pub use progress::{NoopProgress, VerifyProgress};
 pub use state::VerifyState;
 pub use table::{HashSink, HashSpec, hash_table, spec_from_table};

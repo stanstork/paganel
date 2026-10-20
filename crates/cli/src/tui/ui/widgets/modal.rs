@@ -1,3 +1,4 @@
+use crate::format::commas;
 use crate::tui::{
     app::{command::MigrationCommand, core::App, state::IntegrityProgress},
     ui::{
@@ -343,10 +344,7 @@ fn render_migration_completed(
         Line::from(""),
         Line::from(vec![
             Span::styled("Total Rows:      ", styles::label()),
-            Span::styled(
-                format!("{:>10}", format_number_with_commas(total_rows)),
-                styles::value_bold(),
-            ),
+            Span::styled(format!("{:>10}", commas(total_rows)), styles::value_bold()),
         ]),
         Line::from(vec![
             Span::styled("Duration:        ", styles::label()),
@@ -529,29 +527,9 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
         .split(popup_layout[1])[1]
 }
 
-/// Format number with comma separators
-fn format_number_with_commas(n: u64) -> String {
-    let s = n.to_string();
-    let mut result = String::new();
-    for (i, c) in s.chars().rev().enumerate() {
-        if i > 0 && i % 3 == 0 {
-            result.push(',');
-        }
-        result.push(c);
-    }
-    result.chars().rev().collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_format_number_with_commas() {
-        assert_eq!(format_number_with_commas(0), "0");
-        assert_eq!(format_number_with_commas(1000), "1,000");
-        assert_eq!(format_number_with_commas(1_000_000), "1,000,000");
-    }
 
     #[test]
     fn test_modal_state_default() {

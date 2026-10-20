@@ -1,3 +1,4 @@
+use crate::format::commas;
 use crossterm::execute;
 use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 use engine_infra::event_bus::bus::EventBus;
@@ -167,7 +168,7 @@ impl<W: Write> PrettyPrinter<W> {
             self.print_line(
                 Color::Cyan,
                 "◉",
-                &format!("Pipeline '{}' started ({} rows)", name, format_number(*est)),
+                &format!("Pipeline '{}' started ({} rows)", name, commas(*est)),
             )?;
         }
         Ok(())
@@ -225,12 +226,7 @@ impl<W: Write> PrettyPrinter<W> {
         self.print_line(
             Color::Green,
             "✓",
-            &format!(
-                "Receipt '{}': {} rows, root {}",
-                table,
-                format_number(rows),
-                root
-            ),
+            &format!("Receipt '{}': {} rows, root {}", table, commas(rows), root),
         )
     }
 
@@ -269,7 +265,7 @@ impl<W: Write> PrettyPrinter<W> {
 
         self.print_line(Color::Green, "✓", "Snapshot completed!")?;
 
-        writeln!(self.out, "   Total rows: {}", format_number(rows_processed))?;
+        writeln!(self.out, "   Total rows: {}", commas(rows_processed))?;
         writeln!(self.out, "   Duration:   {}", format_duration(duration))?;
         writeln!(self.out, "   Throughput: {}", throughput)?;
         self.out.flush()?;
@@ -340,21 +336,6 @@ impl<W: Write> PrettyPrinter<W> {
     }
 }
 
-/// Formats large numbers with commas (e.g., 1,234,567)
-fn format_number(n: u64) -> String {
-    let s = n.to_string();
-    let bytes = s.as_bytes();
-    let mut result = String::with_capacity(s.len() + s.len() / 3);
-
-    for (i, &b) in bytes.iter().enumerate() {
-        if i > 0 && (bytes.len() - i).is_multiple_of(3) {
-            result.push(',');
-        }
-        result.push(b as char);
-    }
-    result
-}
-
 /// Formats duration in seconds with 2 decimal places
 fn format_duration(duration: Duration) -> String {
     format!("{:.2}s", duration.as_secs_f64())
@@ -365,7 +346,7 @@ fn format_throughput(rows: u64, duration: Duration) -> String {
     let secs = duration.as_secs_f64();
     if secs > 0.001 {
         let rate = (rows as f64 / secs).round() as u64;
-        format!("{}/s", format_number(rate))
+        format!("{}/s", commas(rate))
     } else {
         "-".to_string()
     }
@@ -373,13 +354,13 @@ fn format_throughput(rows: u64, duration: Duration) -> String {
 
 /// Builds row details string (e.g., "1,234 rows, 5 skipped")
 fn build_row_details(rows_processed: u64, rows_skipped: u64, rows_failed: u64) -> String {
-    let mut s = format!("{} rows", format_number(rows_processed));
+    let mut s = format!("{} rows", commas(rows_processed));
 
     if rows_skipped > 0 {
-        s.push_str(&format!(", {} skipped", format_number(rows_skipped)));
+        s.push_str(&format!(", {} skipped", commas(rows_skipped)));
     }
     if rows_failed > 0 {
-        s.push_str(&format!(", {} failed", format_number(rows_failed)));
+        s.push_str(&format!(", {} failed", commas(rows_failed)));
     }
     s
 }
