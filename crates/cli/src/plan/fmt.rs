@@ -1,3 +1,4 @@
+use crate::format::commas;
 use model::execution::row_count::RowCount;
 
 /// Width of the magnitude bar, in cells.
@@ -5,20 +6,6 @@ pub(super) const BAR_W: usize = 5;
 
 pub(super) fn plural(n: usize) -> &'static str {
     if n == 1 { "" } else { "s" }
-}
-
-/// Group a u64 with thousands separators: `16044` -> `16,044`.
-pub(super) fn commas(n: u64) -> String {
-    let digits = n.to_string();
-    let bytes = digits.as_bytes();
-    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
-    for (i, b) in bytes.iter().enumerate() {
-        if i > 0 && (bytes.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(*b as char);
-    }
-    out
 }
 
 /// Count can't be known at plan time (e.g. a WASM/plugin source that streams or

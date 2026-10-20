@@ -32,6 +32,8 @@ pub struct ImportRecord {
     pub name: String,
     /// Connection block name from the config, never the URL.
     pub connection: String,
+    /// The connection's URL without user, password or query, e.g. `postgresql://host:port/dbname`.
+    pub target: Option<String>,
     pub table: String,
     pub key_columns: Vec<String>,
     pub imported_at: DateTime<Utc>,

@@ -236,7 +236,7 @@ async fn stage_and_diff(
     let log = sink.log;
     log.seal(RowHashScope::Verify, sink.pipeline, sink.table)?;
 
-    let expected = log.stream(RowHashScope::Apply, sink.pipeline, sink.table)?;
+    let expected = log.stream(RowHashScope::Baseline, sink.pipeline, sink.table)?;
     let actual = log.stream(RowHashScope::Verify, sink.pipeline, sink.table)?;
     let input = DiffInput::from_receipt(receipt);
 

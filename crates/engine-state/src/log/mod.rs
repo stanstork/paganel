@@ -20,7 +20,10 @@ pub use fold::fold_root;
 /// Which side of a verification a set of row hashes belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RowHashScope {
-    Apply,
+    /// The committed set a receipt was folded from, written by `apply
+    /// --integrity` or `state import`: the expected side of every diff.
+    Baseline,
+    /// Scratch space where verify re-hashes the live table.
     Verify,
 }
 
@@ -28,7 +31,7 @@ impl RowHashScope {
     /// Directory this scope's sets live under.
     pub fn dir_name(self) -> &'static str {
         match self {
-            RowHashScope::Apply => "apply",
+            RowHashScope::Baseline => "baseline",
             RowHashScope::Verify => "verify",
         }
     }
@@ -170,7 +173,7 @@ impl RowHashLog {
     pub fn clear_pipeline(&self, pipeline: &str) -> Result<(), StateStoreError> {
         let sanitized = sanitize(pipeline);
 
-        for scope in [RowHashScope::Apply, RowHashScope::Verify] {
+        for scope in [RowHashScope::Baseline, RowHashScope::Verify] {
             let dir = self.root.join(scope.dir_name()).join(&sanitized);
             self.close_appenders_under(&dir)?;
 
@@ -309,16 +312,16 @@ mod tests {
         let log = log(dir.path());
 
         log.append(
-            RowHashScope::Apply,
+            RowHashScope::Baseline,
             "p",
             "t",
             &[entry(b"c", 3), entry(b"a", 1)],
         )
         .unwrap();
-        log.append(RowHashScope::Apply, "p", "t", &[entry(b"b", 2)])
+        log.append(RowHashScope::Baseline, "p", "t", &[entry(b"b", 2)])
             .unwrap();
 
-        let keys: Vec<Vec<u8>> = sealed(&log, RowHashScope::Apply)
+        let keys: Vec<Vec<u8>> = sealed(&log, RowHashScope::Baseline)
             .into_iter()
             .map(|e| e.key)
             .collect();
@@ -332,12 +335,12 @@ mod tests {
         let dir = tempdir().unwrap();
         let log = log(dir.path());
 
-        log.append(RowHashScope::Apply, "p", "t", &[entry(b"k", 1)])
+        log.append(RowHashScope::Baseline, "p", "t", &[entry(b"k", 1)])
             .unwrap();
-        log.append(RowHashScope::Apply, "p", "t", &[entry(b"k", 9)])
+        log.append(RowHashScope::Baseline, "p", "t", &[entry(b"k", 9)])
             .unwrap();
 
-        let all = sealed(&log, RowHashScope::Apply);
+        let all = sealed(&log, RowHashScope::Baseline);
         assert_eq!(all.len(), 1);
         assert_eq!(all[0].hash, [9u8; 32]);
     }
@@ -350,24 +353,24 @@ mod tests {
         let log = log(dir.path());
 
         log.append(
-            RowHashScope::Apply,
+            RowHashScope::Baseline,
             "p",
             "t",
             &[entry(b"a", 1), entry(b"c", 3)],
         )
         .unwrap();
-        assert_eq!(sealed(&log, RowHashScope::Apply).len(), 2);
+        assert_eq!(sealed(&log, RowHashScope::Baseline).len(), 2);
 
         // A later run adds a row and rewrites an existing one.
         log.append(
-            RowHashScope::Apply,
+            RowHashScope::Baseline,
             "p",
             "t",
             &[entry(b"b", 2), entry(b"a", 7)],
         )
         .unwrap();
 
-        let all = sealed(&log, RowHashScope::Apply);
+        let all = sealed(&log, RowHashScope::Baseline);
         let keys: Vec<Vec<u8>> = all.iter().map(|e| e.key.clone()).collect();
         assert_eq!(keys, vec![b"a".to_vec(), b"b".to_vec(), b"c".to_vec()]);
         assert_eq!(all[0].hash, [7u8; 32], "the later write wins across seals");
@@ -380,20 +383,20 @@ mod tests {
         let dir = tempdir().unwrap();
         let log = log(dir.path());
 
-        log.append(RowHashScope::Apply, "p", "t", &[entry(b"k", 1)])
+        log.append(RowHashScope::Baseline, "p", "t", &[entry(b"k", 1)])
             .unwrap();
         log.append(RowHashScope::Verify, "p", "t", &[entry(b"k", 2)])
             .unwrap();
 
-        assert_eq!(sealed(&log, RowHashScope::Apply)[0].hash, [1u8; 32]);
+        assert_eq!(sealed(&log, RowHashScope::Baseline)[0].hash, [1u8; 32]);
         assert_eq!(sealed(&log, RowHashScope::Verify)[0].hash, [2u8; 32]);
 
         log.clear(RowHashScope::Verify, "p", "t").unwrap();
         assert!(sealed(&log, RowHashScope::Verify).is_empty());
         assert_eq!(
-            sealed(&log, RowHashScope::Apply).len(),
+            sealed(&log, RowHashScope::Baseline).len(),
             1,
-            "apply scope survives"
+            "baseline scope survives"
         );
     }
 
@@ -404,20 +407,20 @@ mod tests {
         let dir = tempdir().unwrap();
         let log = log(dir.path());
 
-        log.append(RowHashScope::Apply, "p", "t1", &[entry(b"a", 1)])
+        log.append(RowHashScope::Baseline, "p", "t1", &[entry(b"a", 1)])
             .unwrap();
-        log.append(RowHashScope::Apply, "p", "t2", &[entry(b"b", 2)])
+        log.append(RowHashScope::Baseline, "p", "t2", &[entry(b"b", 2)])
             .unwrap();
         log.append(RowHashScope::Verify, "p", "t1", &[entry(b"a", 1)])
             .unwrap();
-        log.append(RowHashScope::Apply, "other", "t1", &[entry(b"c", 3)])
+        log.append(RowHashScope::Baseline, "other", "t1", &[entry(b"c", 3)])
             .unwrap();
 
         log.clear_pipeline("p").unwrap();
 
         for (scope, table) in [
-            (RowHashScope::Apply, "t1"),
-            (RowHashScope::Apply, "t2"),
+            (RowHashScope::Baseline, "t1"),
+            (RowHashScope::Baseline, "t2"),
             (RowHashScope::Verify, "t1"),
         ] {
             log.seal(scope, "p", table).unwrap();
@@ -428,9 +431,9 @@ mod tests {
             );
         }
 
-        log.seal(RowHashScope::Apply, "other", "t1").unwrap();
+        log.seal(RowHashScope::Baseline, "other", "t1").unwrap();
         assert_eq!(
-            log.stream(RowHashScope::Apply, "other", "t1")
+            log.stream(RowHashScope::Baseline, "other", "t1")
                 .unwrap()
                 .count(),
             1,
@@ -444,15 +447,15 @@ mod tests {
         let dir = tempdir().unwrap();
         let log = log(dir.path());
 
-        log.append(RowHashScope::Apply, "p", "t", &[entry(b"k", 1)])
+        log.append(RowHashScope::Baseline, "p", "t", &[entry(b"k", 1)])
             .unwrap();
-        log.append(RowHashScope::Apply, "p", "other", &[entry(b"k", 2)])
+        log.append(RowHashScope::Baseline, "p", "other", &[entry(b"k", 2)])
             .unwrap();
 
-        assert_eq!(sealed(&log, RowHashScope::Apply).len(), 1);
-        log.seal(RowHashScope::Apply, "p", "other").unwrap();
+        assert_eq!(sealed(&log, RowHashScope::Baseline).len(), 1);
+        log.seal(RowHashScope::Baseline, "p", "other").unwrap();
         assert_eq!(
-            log.stream(RowHashScope::Apply, "p", "other")
+            log.stream(RowHashScope::Baseline, "p", "other")
                 .unwrap()
                 .count(),
             1
