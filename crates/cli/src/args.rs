@@ -1,4 +1,7 @@
-use crate::{commands::Commands, version::build_version_string};
+use crate::{
+    commands::{Commands, DriftArgs},
+    version::build_version_string,
+};
 use clap::Parser;
 
 #[derive(Parser)]
@@ -62,7 +65,10 @@ impl Cli {
     pub fn is_plan_mode(&self) -> bool {
         matches!(
             self.command,
-            Commands::Plan { .. } | Commands::Receipt { .. } | Commands::Verify { json: true, .. }
+            Commands::Plan { .. }
+                | Commands::Receipt { .. }
+                | Commands::Verify { json: true, .. }
+                | Commands::Drift(DriftArgs { json: true, .. })
         )
     }
 

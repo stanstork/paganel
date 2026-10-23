@@ -85,8 +85,28 @@ pub async fn verify_plan(
     Ok(results)
 }
 
+/// The tables a pipeline's receipts cover: its destination, then any cascade
+/// tables, each once.
+pub(crate) async fn pipeline_tables(
+    pipeline: &Pipeline,
+    driver: &DriverRef,
+) -> Result<Vec<String>, VerifyError> {
+    let mapping = TransformationMetadata::new(pipeline);
+    let cascade_meta = get_graph_expansion(pipeline, driver, &mapping).await?;
+    let cascade_tables = resolve_cascade_tables(pipeline, &mapping, &cascade_meta);
+
+    let mut seen = HashSet::new();
+    let tables = std::iter::once(pipeline.destination.table.as_str())
+        .chain(cascade_tables.iter().map(String::as_str))
+        .filter(|t| !t.is_empty() && seen.insert(*t))
+        .map(String::from)
+        .collect();
+
+    Ok(tables)
+}
+
 #[allow(clippy::too_many_arguments)]
-async fn verify_pipeline(
+pub(crate) async fn verify_pipeline(
     pipeline: &Pipeline,
     exec_ctx: &ExecutionContext,
     state: &Arc<StateStore>,
@@ -98,20 +118,8 @@ async fn verify_pipeline(
     let driver = exec_ctx
         .resolve_driver(&pipeline.destination.connection)
         .await?;
-    let mapping = TransformationMetadata::new(pipeline);
 
-    let cascade_meta = get_graph_expansion(pipeline, &driver, &mapping).await?;
-    let cascade_tables = resolve_cascade_tables(pipeline, &mapping, &cascade_meta);
-
-    // Filter empty names and deduplicate so each table is verified exactly once.
-    let mut seen = HashSet::new();
-    let all_tables = std::iter::once(pipeline.destination.table.as_str())
-        .chain(cascade_tables.iter().map(|s| s.as_str()))
-        .filter(|t| !t.is_empty() && seen.insert(*t))
-        .map(String::from)
-        .collect::<Vec<_>>();
-
-    for table in all_tables {
+    for table in pipeline_tables(pipeline, &driver).await? {
         // Load the receipt written by the most recent `apply --integrity`.
         let Some(receipt) = state.load_receipt(&pipeline.name, &table).await? else {
             let result = VerificationResult::NoPriorRun {
@@ -144,7 +152,7 @@ async fn verify_pipeline(
 /// Re-read every row of `table` from the destination, key and hash each one,
 /// then diff that keyed set against the set the migration committed.
 #[allow(clippy::too_many_arguments)]
-async fn verify_table(
+pub(crate) async fn verify_table(
     driver: &DriverRef,
     pipeline_name: &str,
     table: &str,

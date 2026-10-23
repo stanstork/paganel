@@ -2,6 +2,7 @@ pub mod algorithm;
 pub mod canonical;
 pub mod coerce;
 pub mod config;
+pub mod drift;
 pub mod hasher;
 pub mod import;
 pub mod merkle;
