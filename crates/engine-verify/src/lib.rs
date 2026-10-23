@@ -2,6 +2,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 pub mod diff;
+pub mod drift;
 pub mod error;
 pub mod import;
 pub mod progress;
@@ -11,6 +12,7 @@ pub mod table;
 pub mod verifier;
 
 pub use diff::{DiffInput, DiffOutcome, diff_keyed_sets};
+pub use drift::{DriftTarget, discover_targets, run_drift};
 pub use import::{ImportRequest, connection_target, import_table};
 pub use progress::{NoopProgress, VerifyProgress};
 pub use state::VerifyState;

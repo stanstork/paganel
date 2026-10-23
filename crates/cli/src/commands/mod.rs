@@ -1,12 +1,13 @@
 use crate::{Cli, error::CliError};
-use clap::{Subcommand, ValueEnum};
+use clap::{Args, Subcommand, ValueEnum};
 use engine_infra::shutdown::ShutdownSignal;
 use engine_processing::EnvContext;
 use engine_state::{StateStore, models::RunStatus};
 use model::execution::flags::IntegrityMode;
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 pub mod apply;
+pub mod drift;
 pub mod pause;
 pub mod ping;
 pub mod plan;
@@ -145,6 +146,44 @@ pub enum StateCmd {
     },
     /// Remove an import: its record, receipt and row hashes.
     Rm { name: String },
+}
+
+/// Arguments for `pag drift`.
+#[derive(Args)]
+pub struct DriftArgs {
+    #[arg(
+        short = 'c',
+        long,
+        help = "Path to PPL config file (auto-discovered if not specified)"
+    )]
+    pub config: Option<String>,
+
+    /// Print each run as JSON; with --watch, one line per run
+    #[arg(long)]
+    pub json: bool,
+
+    /// Check only this pipeline or import (repeatable)
+    #[arg(long, value_name = "NAME")]
+    pub filters: Vec<String>,
+
+    #[arg(
+        long,
+        help = "Accept destination rows the receipt does not cover instead of failing on them"
+    )]
+    pub allow_extra: bool,
+
+    /// Repeat until interrupted
+    #[arg(long)]
+    pub watch: bool,
+
+    /// Time between runs with --watch: a number and s, m, h or d, e.g. 15m or 24h
+    #[arg(
+        long,
+        default_value = "24h",
+        value_parser = drift::parse_interval,
+        requires = "watch"
+    )]
+    pub interval: Duration,
 }
 
 #[derive(Subcommand)]
@@ -331,6 +370,9 @@ pub enum Commands {
         #[command(subcommand)]
         cmd: StateCmd,
     },
+    /// Re-check tables against their receipts and imports, once or on an interval
+    #[command(after_help = "Exit codes: 0 match, 1 error, 3 mismatch, 4 inconclusive")]
+    Drift(DriftArgs),
 }
 
 /// Executes the appropriate command based on CLI arguments
@@ -398,5 +440,6 @@ pub async fn execute_command(
         Commands::Receipt { config, json } => receipt::execute(config.clone(), *json, env).await,
         Commands::Plugin { cmd } => plugin::run(cmd, env.clone()).await,
         Commands::State { cmd } => state::run(cmd, env.clone()).await,
+        Commands::Drift(drift_args) => drift::execute(drift_args, env).await,
     }
 }

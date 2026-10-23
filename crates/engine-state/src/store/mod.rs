@@ -2,6 +2,7 @@ use crate::error::StateStoreError;
 use rusqlite::ErrorCode;
 
 mod db;
+pub mod drift;
 pub mod imports;
 pub mod receipts;
 pub mod runs;

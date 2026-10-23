@@ -6,6 +6,7 @@ use std::cmp::Ordering;
 const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0001_init.sql"),
     include_str!("migrations/0002_imports.sql"),
+    include_str!("migrations/0003_drift_runs.sql"),
 ];
 
 /// Bring the schema up to date.
