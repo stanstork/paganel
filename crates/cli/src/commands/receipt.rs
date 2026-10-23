@@ -1,11 +1,13 @@
-use super::{open_state_store, verify::commas};
-use crate::{config, error::CliError};
+use super::open_state_store;
+use crate::{
+    config,
+    error::CliError,
+    format::{DATE_FORMAT, commas},
+};
 use engine_processing::EnvContext;
 use model::integrity::receipt::VerificationReceipt;
 use serde::Serialize;
 use std::{collections::HashSet, sync::Arc};
-
-const DATE_FORMAT: &str = "%Y-%m-%d %H:%M:%S UTC";
 
 /// Print the integrity receipts stored by `apply --integrity`.
 pub async fn execute(

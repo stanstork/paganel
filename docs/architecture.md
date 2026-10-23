@@ -30,7 +30,7 @@ graph TB
 | `expression-engine` | Language | Expression evaluation (filters, computed columns, functions) |
 | `query-builder` | Language | SQL AST + dialect-aware rendering |
 | `connectors` | Data Access | MySQL, PostgreSQL, CSV drivers; unified `Driver` trait hierarchy |
-| `engine-state` | Infrastructure | Sled embedded KV - checkpoints, WAL, run state, integrity receipts; plus the append-and-sort log holding per-row integrity hashes |
+| `engine-state` | Infrastructure | SQLite state store (`state.db`, WAL mode) - checkpoints, WAL, run state, integrity receipts, run locks; plus the append-and-sort log holding per-row integrity hashes |
 | `engine-infra` | Infrastructure | EventBus, Metrics, Progress, Retry utilities |
 | `engine-schema` | Schema | Type system, DDL generation, FK dependency graph, schema planning |
 | `engine-core` | Core Services | ExecutionContext, DriverRef, plan builder |
@@ -113,7 +113,7 @@ graph TB
 
 #### ExecutionContext (`engine-core/context/exec.rs`)
 - Shared across all pipelines in a run
-- Holds connection pool (reuses drivers), `run_id`, `SledStateStore`, `RowHashLog`, `EnvContext`
+- Holds connection pool (reuses drivers), `run_id`, `StateStore`, `RowHashLog`, `EnvContext`
 - `run_id` is deterministic: `"run-{plan_hash[:16]}"`, so the same plan always resumes the same state
 
 ---
@@ -186,7 +186,7 @@ Per-pipeline execution context. Builder pattern. Holds:
 
 #### Consumer (`consumer/`)
 - Receives batches, routes to the appropriate `Sink`
-- Writes a checkpoint to `SledStateStore` after each batch
+- Writes a checkpoint to `StateStore` after each batch
 - Tracks metrics via `Metrics`
 
 > The **actors** that drive these live in `engine-runtime/src/actor/`:
@@ -294,24 +294,32 @@ Extracted from `engine-core` to keep it slim. Consumers depend on them directly:
 no longer re-exports the infrastructure crates under aliases.
 
 #### StateStore (`engine-state/store`)
-Sled embedded KV database at `~/.paganel/state/`:
-- `SledStateStore` - ACID checkpoints with WAL
+SQLite database at `~/.paganel/state/state.db`, in WAL mode:
+- `StateStore` - one concrete type over tables `runs`, `checkpoints`, `wal` and
+  `receipts`; the schema is versioned with `PRAGMA user_version` migrations
+  (`store/migrations/`)
 - Checkpoint stores: cursor position, row counts, timestamps
 - Resume: on restart, load checkpoint and skip processed rows
-- `WalEntry` model for write-ahead log entries
-- `MerkleStore` - integrity receipts, one per pipeline and table
+- `WalEntry` model for the run's write-ahead log (the `wal` table, not SQLite's
+  own WAL journal); a batch's commit record and its checkpoint are written in
+  one transaction
+- Integrity receipts, one per pipeline and table
+- SQLite calls run on `spawn_blocking`, and a background thread checkpoints
+  SQLite's WAL journal every second, so no batch write pays for it
+- `RunLock` - a per-run file lock at `~/.paganel/state/locks/{run_id}.lock`,
+  held by `apply`, `resume` and `verify`; the OS releases it on any exit
 
 #### RowHashLog (`engine-state/log`)
 A peer of the store, not part of it, at `~/.paganel/state/rowhash/`. Per-row
 integrity hashes are bulk data with a narrow access pattern (appended once, read
 back once in key order, deleted), so they live in an append-only log sorted by
-external merge sort rather than in the key-value store, which would charge
+external merge sort rather than in the state database, which would charge
 per-record index memory for an index nothing queries. Memory stays flat with
 table size; disk carries the set (~51 bytes/row). See
 [verification.md](verification.md#row-hashes).
 
-`engine-state` also holds `CalibrationData`, a small, separate sled db at
-`~/.paganel/calibration` recording achieved throughput per destination write
+`engine-state` also holds `CalibrationData`, a small JSON file at
+`~/.paganel/calibration.json` recording achieved throughput per destination write
 path. `apply` records into it; `plan` reads it to estimate duration from this
 machine's real rates instead of a cold-start prior (see [plan.md](plan.md)). It's
 a regenerable cache, independent of the run state store.
@@ -357,7 +365,7 @@ and `pause` uses to stop a run at a batch boundary.
 1. Parse PPL  ->  AST  (ppl-syntax)
 2. Build plan  ->  ExecutionPlan + hash  (engine-config, engine-core)
 3. Analyze     ->  MetadataCache, row counts, diagnostics  (engine-planner)
-4. Initialize  ->  ExecutionContext (connection pool, SledStateStore, run_id)
+4. Initialize  ->  ExecutionContext (connection pool, StateStore, run_id)
 5. Build DAG   ->  topological levels from after=[...] declarations
 6. Per level (parallel):
    For each pipeline:
@@ -375,7 +383,7 @@ and `pause` uses to stop a run at a batch boundary.
 
 ```
 1. Load ExecutionPlan (same hash -> same run_id)
-2. For each pipeline: load checkpoint from SledStateStore
+2. For each pipeline: load checkpoint from StateStore
 3. Skip already-processed rows (cursor position)
 4. Continue from last checkpoint
 ```
@@ -406,11 +414,11 @@ When FK dependencies form a cycle (mutual references, self-references), a BFS-ba
 ### Bounded MPSC Channel (4 batches or 128 MiB)
 The producer -> consumer channel is bounded two ways, whichever binds first: by batch count (`BATCH_CHANNEL_CAPACITY = 4`) and by in-flight bytes (`MAX_INFLIGHT_BYTES = 128 MiB`). The byte bound is the wide-row guard: a batch of very wide rows draws proportionally more of the budget, so the window can't balloon on wide tables. This provides natural backpressure (the producer blocks when the consumer can't keep up) and bounds per-lane memory regardless of source speed or table size. The depth was deliberately kept shallow: a deep channel just parks more fully-materialized batches in RAM without improving throughput. Extra read-ahead only helps if the consumer has spare capacity to drain it, which the slower side (usually the write, or per-row transform CPU) doesn't. Per-lane footprint scales with lane count, not table size; see [benchmarks.md](benchmarks.md).
 
-### Sled for StateStore
-Embedded, no external dependency, ACID-transactional, B+ tree with lock-free reads, crash-safe WAL. Checkpoints are written after every batch so crash recovery loses at most one batch. It holds the small keyed records: checkpoints, WAL entries, run state, and integrity receipts.
+### SQLite for StateStore
+Embedded and compiled in (rusqlite's bundled SQLite), so there's no external dependency. Transactions are ACID, and WAL mode lets other processes read while a migration writes: `pag status`, `receipt`, and runs of other configs open the same store without waiting. Checkpoints are written after every batch, and a batch's commit record and checkpoint share one transaction, so crash recovery loses at most one batch. It holds the small keyed records: checkpoints, WAL entries, run state, and integrity receipts. Keeping two runs of one config apart is the job of `RunLock`, not of the database.
 
-### A Log, Not the KV Store, for Row Hashes
-Per-row integrity hashes have the opposite shape to everything else in the state store: appended once, read back once in key order, deleted, and never looked up by key. Storing them in the B+ tree charged per-record index memory for an index nothing queries: measured at ~0.4-0.7 KB resident per 40-byte record, it put a ten-million-row table into gigabytes and out of memory. They live instead in an append-only log sorted once by external merge sort (`engine-state/log`), which keeps memory flat with table size and moves the cost to disk. The two mechanisms sit side by side in the state directory and share nothing else.
+### A Log, Not the State Database, for Row Hashes
+Per-row integrity hashes have the opposite shape to everything else in the state store: appended once, read back once in key order, deleted, and never looked up by key. Storing them as indexed records charges per-record index memory for an index nothing queries: an earlier embedded key-value store measured ~0.4-0.7 KB resident per 40-byte record, which put a ten-million-row table into gigabytes and out of memory. They live instead in an append-only log sorted once by external merge sort (`engine-state/log`), which keeps memory flat with table size and moves the cost to disk. The two mechanisms sit side by side in the state directory and share nothing else.
 
 ### DriverRef + dispatch_driver! Macro
 Instead of `Arc<dyn Driver>` (which loses type information), `DriverRef` is an enum over concrete driver types. The `dispatch_driver!` macro generates match arms, allowing monomorphic dispatch without dynamic dispatch overhead on hot paths.
@@ -457,7 +465,7 @@ machine-specific, not a reference spec):
 ## Reliability Features
 
 ### Checkpoint & Resume
-Per batch: checkpoint (`write`, with the pending cursor) -> commit the batch to the destination -> append `BatchCommit` to the WAL -> checkpoint (`committed`, cursor advanced), all in Sled. On restart: same `run_id` (deterministic from plan hash) -> load checkpoint -> if the last checkpoint is `write`, consult the WAL: a `BatchCommit` for that batch means it landed, so resume from the pending cursor; no record means resume from the previous cursor and re-write the batch. The window is one batch, so recovery is at-least-once at batch granularity; `on_conflict` makes the replay idempotent for keyed tables, a plain COPY into a keyed table fails on the duplicate key, and a table without a primary key can end up with that batch duplicated.
+Per batch: checkpoint (`write`, with the pending cursor) -> commit the batch to the destination -> one SQLite transaction that appends `BatchCommit` to the WAL and writes the checkpoint (`committed`, cursor advanced). On restart: same `run_id` (deterministic from plan hash) -> load checkpoint -> if the last checkpoint is `write`, consult the WAL: a `BatchCommit` for that batch means it landed, so resume from the pending cursor; no record means resume from the previous cursor and re-write the batch. The window is one batch, so recovery is at-least-once at batch granularity; `on_conflict` makes the replay idempotent for keyed tables, a plain COPY into a keyed table fails on the duplicate key, and a table without a primary key can end up with that batch duplicated.
 
 ### Circuit Breaker
 4 consecutive failures -> circuit opens. Exponential backoff (1s…30s). Resets on next success. Prevents resource exhaustion from flapping destinations.

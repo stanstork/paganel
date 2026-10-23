@@ -14,6 +14,9 @@ pub enum VerifyError {
     #[error("Unsupported driver: {0}")]
     UnsupportedDriver(String),
 
+    #[error("table '{0}' has no primary key; pass --key with the columns that identify a row")]
+    NoKey(String),
+
     #[error("No integrity receipts found — run `apply --integrity` first")]
     NoReceipts,
 

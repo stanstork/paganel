@@ -258,7 +258,7 @@ time. Introspecting the destination again would let a schema change between appl
 and verify silently alter the encoding, which would look like a data mismatch.
 
 The per-row `(key, hash)` set the root commits to is **not** in the receipt; it
-lives beside it in the row-hash log (`rowhash/apply/…`). The receipt stays a fixed
+lives beside it in the row-hash log (`rowhash/baseline/…`). The receipt stays a fixed
 ~200 bytes whatever the table size.
 
 The receipt is yours to read back at any time: `pag receipt -c migration.ppl`
@@ -282,13 +282,17 @@ exports them as text you can commit or attach (see
   missing or truncated (cleared by hand, or `verify` run against a different
   state directory than the one `apply` wrote to). The destination cannot be
   diffed against the committed set, so the result is **inconclusive**: `verify`
-  exits non-zero rather than reporting every intact row as `extra`. Re-run
+  exits 4 rather than reporting every intact row as `extra`. Re-run
   `apply --integrity` to rebuild the log.
 
 A mismatch also lists individual diverging rows by key (`actor_id=42`), each
 tagged missing / extra / changed. The counts are always complete; only that
 detail list is capped, at 100 rows, so a fully-diverged table cannot produce an
 unbounded report.
+
+`verify` exits 0 when every table with a receipt matched, 3 on any mismatch, 4
+when a table is inconclusive and none mismatched, and 1 on an error; see
+[output-modes.md](output-modes.md#default-output) for the table.
 
 ---
 
@@ -423,8 +427,8 @@ append-and-sort log:
     run-000.tmp     sorted chunks, only while sealing a set too large to sort in memory
     sorted.log      the sealed set: sorted by key, one record per key
 
-scope = "apply"    committed by a migration, kept until that pipeline runs again
-      = "verify"   staged by verify, cleared when it finishes
+scope = "baseline"  committed by a migration or `state import`, kept until it is replaced
+      = "verify"    staged by verify, cleared when it finishes
 ```
 
 A record is `key_len | order | hash | key`. See
@@ -478,7 +482,7 @@ Before running a large migration with `--integrity`:
 - **The sealed set is retained**, not deleted at the end of the run. `verify` reads
   it, so it has to outlive `apply`. It is replaced the next time the same pipeline
   runs, and removed by `pag reset`. A 10M-row table with an integer key leaves
-  ~510 MB on disk under `~/.paganel/state/rowhash/apply/`.
+  ~510 MB on disk under `~/.paganel/state/rowhash/baseline/`.
 - **Sealing needs headroom.** The pending log, the sorted runs, and the merged
   output all exist at once for part of the seal, so peak disk during finalize is up
   to ~3x the sealed size, about **1.5 GB** for that 10M-row table, falling back to
@@ -518,7 +522,7 @@ Verify reads the whole destination table with a keyset scan over its primary key
 Both sides now live in the same store, sorted by the same canonical key encoding, so one merge-join pass produces everything:
 
 ```
-walk expected (apply scope) and actual (verify scope) in lockstep by key:
+walk expected (baseline scope) and actual (verify scope) in lockstep by key:
     key only in expected            -> missing
     key only in actual              -> extra,   fold into actual_root
     key in both, hashes differ      -> changed, fold into actual_root
@@ -614,7 +618,7 @@ finished set rather than as rows stream past.
 | Rows deleted after migration | Reported as `missing`, named by key. |
 | Row modified after migration | Reported as `changed`, named by key, with both hashes. |
 | `NoPriorRun` | Pipeline ran without `--integrity`. Not an error. |
-| Receipt present, row-hash log missing/truncated | `LogUnavailable` - inconclusive, `verify` exits non-zero rather than reporting a false mismatch. Re-run `apply --integrity`. |
+| Receipt present, row-hash log missing/truncated | `LogUnavailable` - inconclusive, `verify` exits 4 rather than reporting a false mismatch. Re-run `apply --integrity`. |
 | Destination table with no primary key | Rows key by their own hash; a warning is logged. Duplicate identical rows are indistinguishable. |
 | Multiple pipelines (DAG) | Each pipeline verifies independently. Results are collected in execution order. |
 | Many null columns | Null-heavy rows serialize compactly (`0x00` per null column). |

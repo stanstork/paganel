@@ -228,7 +228,7 @@ mod tests {
     }
 
     /// Build a store-shaped iterator: entries must be in ascending key order,
-    /// exactly as sled yields them.
+    /// exactly as the row-hash log yields them.
     fn iter(rows: &[(&[u8], u8)]) -> RowHashIter {
         let mut owned: Vec<KeyedRowHash> = rows
             .iter()
@@ -263,7 +263,7 @@ mod tests {
             options,
         )
         .expect("diff");
-        // Every committed row is streamed off the (in-memory) apply set here, so
+        // Every committed row is streamed off the (in-memory) baseline set here, so
         // the log-consistency invariant verify relies on must hold.
         assert_eq!(out.expected_seen, expected.len() as u64);
         (out.actual_root, out.summary, out.divergences)
@@ -419,7 +419,7 @@ mod tests {
     /// An empty committed set with a populated destination flags every row as
     /// `extra`, and `expected_seen` is 0. That zero (against a receipt that
     /// expected rows) is what `verify_table` turns into `LogUnavailable` instead
-    /// of a false mismatch when the apply row-hash log is missing.
+    /// of a false mismatch when the baseline row-hash log is missing.
     #[test]
     fn no_committed_rows_yields_all_extra_and_zero_expected_seen() {
         // `diff` asserts expected_seen == 0 for an empty committed set.

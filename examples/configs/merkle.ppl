@@ -15,8 +15,8 @@
 // During apply, every row written is hashed (SHA-256 over its canonical
 // form) and keyed by its primary key. The leaves are folded into one Merkle
 // root per table, taken in ascending key order, so batch size, lane count and
-// read order do not change the root. The receipt and the row-hash log are
-// stored in a local sled key-value store (~/.paganel/state/).
+// read order do not change the root. The receipt is stored in the local SQLite
+// state store and the row-hash log next to it (~/.paganel/state/).
 //
 // During verify, the destination is re-read and re-hashed, and the two
 // key-sorted streams are merge-joined against the stored log. Nothing

@@ -1,4 +1,4 @@
-use crate::{args::Cli, config, error::CliError};
+use crate::{args::Cli, config, error::CliError, format::commas};
 use crossterm::execute;
 use crossterm::style::{Color, Print, ResetColor, SetForegroundColor};
 use engine_processing::EnvContext;
@@ -309,21 +309,6 @@ pub fn format_result(result: &VerificationResult) -> String {
             )
         }
     }
-}
-
-/// Thousands-separated integer, e.g. 1234567 -> "1,234,567".
-pub(crate) fn commas(n: u64) -> String {
-    let s = n.to_string();
-    let bytes = s.as_bytes();
-    let mut out = String::with_capacity(s.len() + s.len() / 3);
-
-    for (i, &b) in bytes.iter().enumerate() {
-        if i > 0 && (bytes.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(b as char);
-    }
-    out
 }
 
 /// First 8 bytes of a per-row hash - enough to tell two rows apart by eye.

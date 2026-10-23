@@ -1,5 +1,5 @@
 use super::open_state_store;
-use crate::{config, error::CliError};
+use crate::{config, error::CliError, format::DATE_FORMAT};
 use chrono::{DateTime, Utc};
 use engine_processing::EnvContext;
 use engine_state::{
@@ -8,8 +8,6 @@ use engine_state::{
     models::{PipelineStatus, RunState, RunStatus},
 };
 use std::{collections::HashMap, sync::Arc};
-
-const DATE_FORMAT: &str = "%Y-%m-%d %H:%M:%S UTC";
 
 pub async fn execute(config_path: Option<String>, env: Arc<EnvContext>) -> Result<(), CliError> {
     let state = open_state_store()?;
