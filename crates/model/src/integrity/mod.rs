@@ -6,6 +6,7 @@ pub mod drift;
 pub mod hasher;
 pub mod import;
 pub mod merkle;
+pub mod pair;
 pub mod receipt;
 pub mod report;
 pub mod result;

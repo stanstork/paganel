@@ -186,6 +186,7 @@ pub(crate) async fn verify_table(
         summary,
         divergences,
         expected_seen,
+        ..
     } = outcome?;
     let duration_ms = start.elapsed().as_millis() as u64;
 
@@ -236,7 +237,7 @@ async fn stage_and_diff(
     progress.table_phase("reading destination");
 
     let spec = HashSpec::from_receipt(receipt);
-    let dest_rows = hash_table(driver, meta, &spec, sink, Some(receipt.total_rows)).await?;
+    let dest_rows = hash_table(driver, meta, &spec, sink, None, Some(receipt.total_rows)).await?;
 
     // Both sides have to be walked in the same order; sealing is what puts the
     // staged destination into the receipt set's key order.

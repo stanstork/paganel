@@ -3,7 +3,7 @@ use crate::{
     commands::{Commands, SampleMethod},
     config,
     error::CliError,
-    plan,
+    plan::{self, json::PlanJson},
     spinner::Spinner,
 };
 use engine_core::context::env::EnvContext;
@@ -36,6 +36,25 @@ pub async fn execute(cli: &Cli, commands: &Commands, env: Arc<EnvContext>) -> Re
 
         // Load core plan
         let core_plan = config::load_plan(&config_path, false, env.clone()).await?;
+
+        // Pairs alone give apply nothing to plan.
+        if core_plan.pipelines.is_empty() && !core_plan.pairs.is_empty() {
+            let rendered = if *json {
+                serde_json::to_string_pretty(&PlanJson::new(None, &core_plan.pairs))?
+            } else {
+                let color =
+                    output_path.is_none() && !cli.no_color && std::io::stdout().is_terminal();
+                plan::pairs(&core_plan.pairs, color)
+            };
+
+            match output_path {
+                Some(path) => tokio::fs::write(path, rendered).await?,
+                None if !cli.quiet => print!("{rendered}"),
+                None => {}
+            }
+
+            return Ok(());
+        }
 
         // Build DAG
         let dag = build_dag(&core_plan)?;
@@ -73,10 +92,10 @@ pub async fn execute(cli: &Cli, commands: &Commands, env: Arc<EnvContext>) -> Re
         let to_file = output_path.is_some();
         let rendered = if *json {
             // The full machine-readable report (for CI / tooling).
-            serde_json::to_string_pretty(&report)?
+            serde_json::to_string_pretty(&PlanJson::new(Some(&report), &core_plan.pairs))?
         } else {
             let color = !to_file && !cli.no_color && std::io::stdout().is_terminal();
-            plan::render(&report, color, *ddl)
+            plan::render(&report, &core_plan.pairs, color, *ddl)
         };
 
         match output_path {

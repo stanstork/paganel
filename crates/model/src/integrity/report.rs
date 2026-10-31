@@ -43,6 +43,9 @@ pub struct TableReport {
     /// Drift only: a mismatch that was not one in the previous run.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub new_since_last: bool,
+    /// Pairs only: whether differing keys were read again after `grace`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recheck: Option<Recheck>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +63,17 @@ pub enum DivergenceReportKind {
     Missing,
     Changed,
     Extra,
+}
+
+/// What a pair's re-read of its differing keys did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "status")]
+pub enum Recheck {
+    /// The keys were read again; `settled` of them matched by then and are
+    /// not counted as differences.
+    Done { settled: u64 },
+    /// The counts are from the first read alone.
+    Skipped { reason: String },
 }
 
 impl TableReport {
@@ -81,6 +95,7 @@ impl TableReport {
             duration_ms: 0,
             message: None,
             new_since_last: false,
+            recheck: None,
         }
     }
 
@@ -150,6 +165,7 @@ impl From<&VerificationResult> for TableReport {
                     duration_ms: *duration_ms,
                     message: None,
                     new_since_last: false,
+                    recheck: None,
                 }
             }
             VerificationResult::Mismatch {
@@ -174,6 +190,7 @@ impl From<&VerificationResult> for TableReport {
                 duration_ms: *duration_ms,
                 message: None,
                 new_since_last: false,
+                recheck: None,
             },
             VerificationResult::NoPriorRun { pipeline, table } => {
                 Self::uncompared(pipeline.clone(), table.clone(), ReportResult::NoPriorRun)

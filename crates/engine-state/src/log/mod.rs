@@ -25,6 +25,8 @@ pub enum RowHashScope {
     Baseline,
     /// Scratch space where verify re-hashes the live table.
     Verify,
+    /// Scratch space for the source side of a pair: its expected side.
+    Source,
 }
 
 impl RowHashScope {
@@ -33,6 +35,7 @@ impl RowHashScope {
         match self {
             RowHashScope::Baseline => "baseline",
             RowHashScope::Verify => "verify",
+            RowHashScope::Source => "source",
         }
     }
 }
@@ -173,7 +176,11 @@ impl RowHashLog {
     pub fn clear_pipeline(&self, pipeline: &str) -> Result<(), StateStoreError> {
         let sanitized = sanitize(pipeline);
 
-        for scope in [RowHashScope::Baseline, RowHashScope::Verify] {
+        for scope in [
+            RowHashScope::Baseline,
+            RowHashScope::Verify,
+            RowHashScope::Source,
+        ] {
             let dir = self.root.join(scope.dir_name()).join(&sanitized);
             self.close_appenders_under(&dir)?;
 

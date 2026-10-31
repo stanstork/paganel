@@ -54,7 +54,7 @@ pub async fn import_table(
         pipeline: &pipeline,
         table: &req.table,
     };
-    hash_table(driver, meta, &spec, &sink, None).await?;
+    hash_table(driver, meta, &spec, &sink, None, None).await?;
 
     progress.table_phase("sorting row hashes");
     let hash_log = state.hash_log.clone();

@@ -1,20 +1,16 @@
-use crate::io::filter::compiler::{FilterCompileError, FilterCompiler};
-use connectors::drivers::csv::filter::{CsvComparator, CsvCondition, CsvFilter, CsvFilterExpr};
+use crate::{
+    drivers::csv::filter::{CsvComparator, CsvCondition, CsvFilter, CsvFilterExpr},
+    error::FilterCompileError,
+};
 use model::{
     core::value::Value,
     execution::expr::{BinaryOp, CompiledExpression},
 };
 use std::str::FromStr;
 
-pub struct CsvFilterCompiler;
-
-impl FilterCompiler for CsvFilterCompiler {
-    type Filter = CsvFilter;
-
-    fn compile(expr: &CompiledExpression) -> Result<Self::Filter, FilterCompileError> {
-        let csv_expr = compile_csv_expr(expr)?;
-        Ok(CsvFilter::with_expr(csv_expr))
-    }
+/// Compile a `where` expression into a CSV row filter, or say what it cannot express.
+pub fn compile_filter(expr: &CompiledExpression) -> Result<CsvFilter, FilterCompileError> {
+    Ok(CsvFilter::with_expr(compile_csv_expr(expr)?))
 }
 
 fn from_compiled_condition(

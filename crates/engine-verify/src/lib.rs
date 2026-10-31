@@ -5,6 +5,7 @@ pub mod diff;
 pub mod drift;
 pub mod error;
 pub mod import;
+pub mod pair;
 pub mod progress;
 pub mod reader;
 pub mod state;

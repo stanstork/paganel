@@ -367,3 +367,83 @@ fn test_build_multiple_plugins_in_document() {
     assert_eq!(doc.plugins[0].name, "a");
     assert_eq!(doc.plugins[1].name, "b");
 }
+
+#[test]
+fn test_build_pair_block() {
+    let input = r#"
+        pair "orders" {
+            source {
+                connection = connection.app
+                table      = "orders"
+                where      { status == "paid" }
+            }
+            target {
+                connection = connection.warehouse
+                table      = "orders_raw"
+                where      { state == "PAID" }
+                ignore     = ["_fivetran_synced"]
+            }
+            map {
+                source.customer_id = target.cust_id
+                target.amount      = source.total
+            }
+            key   = ["id"]
+            grace = "30s"
+        }
+    "#;
+
+    let doc = parse(input).expect("parse");
+    assert_eq!(doc.pairs.len(), 1);
+
+    let pair = &doc.pairs[0];
+    assert_eq!(pair.name, "orders");
+    let sides: Vec<&str> = pair.sides.iter().map(|s| s.kind.as_str()).collect();
+    assert_eq!(sides, ["source", "target"]);
+    assert_eq!(pair.sides[0].where_clauses.len(), 1);
+    assert_eq!(pair.sides[1].attributes.len(), 3);
+
+    let map: Vec<(String, String)> = pair
+        .map
+        .iter()
+        .map(|m| (m.left.to_string(), m.right.to_string()))
+        .collect();
+    assert_eq!(
+        map,
+        [
+            ("source.customer_id".into(), "target.cust_id".into()),
+            ("target.amount".into(), "source.total".into()),
+        ]
+    );
+    assert_eq!(pair.attributes.len(), 2);
+}
+
+#[test]
+fn test_pair_map_line_needs_two_columns() {
+    let input = r#"
+        pair "orders" {
+            source { connection = connection.a table = "t" }
+            target { connection = connection.b table = "t" }
+            map { source.customer_id = "cust_id" }
+        }
+    "#;
+    assert!(parse(input).is_err());
+}
+
+#[test]
+fn test_pair_keyword_leaves_identifiers_alone() {
+    // A column called `pair` or `pair_id` is still an identifier.
+    let input = r#"
+        pipeline "p" {
+            from { connection = connection.a table = "t" }
+            to { connection = connection.b table = "t" }
+            select {
+                pair    = t.pair
+                pair_id = t.pair_id
+            }
+        }
+    "#;
+
+    let doc = parse(input).expect("parse");
+    assert!(doc.pairs.is_empty());
+    assert_eq!(doc.pipelines.len(), 1);
+}
