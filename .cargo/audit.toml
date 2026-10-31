@@ -24,4 +24,18 @@ ignore = [
     # in by ureq 2.x (engine-wasm), and no fixed 0.26 exists. The direct 1.x
     # entry is patched.
     "RUSTSEC-2026-0381",
+
+    # RUSTSEC-2026-0391 (zstd 0.13.3), RUSTSEC-2026-0398 and RUSTSEC-2026-0403
+    # (zstd-safe 7.2.4) - NOT REACHABLE / NO UPSTREAM FIX.
+    # zstd is only pulled in by wasmtime's `cache` feature (engine-wasm), which
+    # calls `encode_all`/`decode_all` on compiled-module files it wrote itself
+    # under the wasmtime cache directory. 0403 is in `Seekable`, which is never
+    # used; 0398 is in the allocator shim for wasm-targeted zstd builds, and we
+    # build zstd natively. 0391 needs a planted legacy-format frame in the cache
+    # directory, i.e. an attacker who already has local write access. Even
+    # wasmtime 50.0.1 still requires zstd ^0.13, so no bump fixes it. Revisit
+    # when wasmtime moves to zstd >=0.14.3.
+    "RUSTSEC-2026-0391",
+    "RUSTSEC-2026-0398",
+    "RUSTSEC-2026-0403",
 ]
