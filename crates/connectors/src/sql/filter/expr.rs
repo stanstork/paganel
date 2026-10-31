@@ -118,6 +118,22 @@ impl SqlFilterExpr {
         columns.dedup();
         columns
     }
+
+    /// The same expression with every condition on `table`.
+    pub fn on_table(&self, table: &str) -> SqlFilterExpr {
+        match self {
+            SqlFilterExpr::Leaf(cond) => SqlFilterExpr::Leaf(Condition {
+                table: table.to_string(),
+                ..cond.clone()
+            }),
+            SqlFilterExpr::And(exprs) => {
+                SqlFilterExpr::And(exprs.iter().map(|e| e.on_table(table)).collect())
+            }
+            SqlFilterExpr::Or(exprs) => {
+                SqlFilterExpr::Or(exprs.iter().map(|e| e.on_table(table)).collect())
+            }
+        }
+    }
 }
 
 impl fmt::Display for SqlFilterExpr {

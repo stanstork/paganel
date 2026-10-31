@@ -39,6 +39,7 @@ kw_null        = @{ "null" ~ !(ASCII_ALPHANUMERIC | "_") }
 kw_and         = @{ "and" ~ !(ASCII_ALPHANUMERIC | "_") }
 kw_or          = @{ "or" ~ !(ASCII_ALPHANUMERIC | "_") }
 kw_plugin      = @{ "plugin" ~ !(ASCII_ALPHANUMERIC | "_") }
+kw_pair        = @{ "pair" ~ !(ASCII_ALPHANUMERIC | "_") }
 
 // ============================================================
 // Literals
@@ -103,6 +104,12 @@ plugin_block = { kw_plugin ~ lit_string ~ lbrace ~ (attribute | nested_block)* ~
 
 // Pipeline block (with string name)
 pipeline_block = { kw_pipeline ~ lit_string ~ lbrace ~ pipeline_content* ~ rbrace }
+
+// Pair block (with string name): two live tables `pag drift` checks hold the same rows.
+pair_block   = { kw_pair ~ lit_string ~ lbrace ~ (attribute | pair_map | pair_side)* ~ rbrace }
+pair_side    = { ident ~ lbrace ~ (attribute | where_block)* ~ rbrace }
+pair_map     = { kw_map ~ lbrace ~ column_match* ~ rbrace }
+column_match = { dotted_ident ~ op_eq ~ dotted_ident }
 
 // ============================================================
 // Pipeline Content
@@ -194,4 +201,4 @@ plugin_input_field = { ident ~ ":" ~ (dotted_ident | ident) }
 // Program Entry Point
 // ============================================================
 
-program = { SOI ~ (define_block | execution_block | connection_block | plugin_block | pipeline_block)* ~ EOI }
+program = { SOI ~ (define_block | execution_block | connection_block | plugin_block | pipeline_block | pair_block)* ~ EOI }

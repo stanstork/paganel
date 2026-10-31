@@ -1,6 +1,7 @@
 use crate::{
     VerifyOptions, VerifyProgress, VerifyState,
     error::VerifyError,
+    pair::diff_pair,
     verifier::{pipeline_tables, verify_table},
 };
 use chrono::Utc;
@@ -8,7 +9,7 @@ use engine_core::{
     context::{env::EnvContext, exec::ExecutionContext},
     drivers::DriverRef,
     error::StateStoreError,
-    plan::execution::ExecutionPlan,
+    plan::{execution::ExecutionPlan, pair::PairSpec},
 };
 use engine_state::RunLock;
 use model::{
@@ -16,6 +17,7 @@ use model::{
     integrity::{
         drift::{DriftRun, Skipped},
         import::{ImportRecord, import_pipeline},
+        pair::pair_pipeline,
         receipt::VerificationReceipt,
         report::TableReport,
     },
@@ -29,6 +31,7 @@ pub enum DriftTarget<'a> {
         record: ImportRecord,
         connection: &'a Connection,
     },
+    Pair(&'a PairSpec),
 }
 
 impl DriftTarget<'_> {
@@ -36,6 +39,7 @@ impl DriftTarget<'_> {
         match self {
             Self::Pipeline(p) => &p.name,
             Self::Import { record, .. } => &record.name,
+            Self::Pair(spec) => &spec.name,
         }
     }
 }
@@ -55,6 +59,14 @@ pub async fn discover_targets<'a>(
         .filter(|p| is_selected(&p.name))
         .map(DriftTarget::Pipeline)
         .collect();
+
+    targets.extend(
+        plan.pairs
+            .iter()
+            .filter(|c| is_selected(&c.name))
+            .map(DriftTarget::Pair),
+    );
+
     let mut skipped = Vec::new();
 
     for record in state.store.list_imports().await? {
@@ -137,6 +149,10 @@ pub async fn run_drift(
             DriftTarget::Import { record, connection } => {
                 let report =
                     check_import(record, connection, &exec_ctx, state, progress, options).await?;
+                run.tables.push(report);
+            }
+            DriftTarget::Pair(spec) => {
+                let report = check_pair(spec, &exec_ctx, state, progress).await;
                 run.tables.push(report);
             }
         }
@@ -249,4 +265,23 @@ async fn check_table(
         }
         Err(e) => TableReport::error(pipeline, table, e.to_string()),
     }
+}
+
+async fn check_pair(
+    spec: &PairSpec,
+    exec_ctx: &ExecutionContext,
+    state: &VerifyState,
+    progress: &mut dyn VerifyProgress,
+) -> TableReport {
+    let compared = async {
+        let source = exec_ctx.resolve_driver(&spec.source.connection).await?;
+        let target = exec_ctx.resolve_driver(&spec.target.connection).await?;
+
+        diff_pair(spec, &source, &target, &state.hash_log, progress).await
+    }
+    .await;
+
+    compared.unwrap_or_else(|e| {
+        TableReport::error(pair_pipeline(&spec.name), &spec.target.table, e.to_string())
+    })
 }

@@ -1,6 +1,6 @@
 use crate::{
     context::env::EnvContext,
-    plan::{builder::PlanBuilder, env::EnvVarCollector},
+    plan::{builder::PlanBuilder, env::EnvVarCollector, pair::PairSpec},
 };
 use model::execution::{
     config::ExecutionConfig,
@@ -33,6 +33,10 @@ pub struct ExecutionPlan {
     /// Source config file path - metadata only, excluded from hash.
     #[serde(skip)]
     pub config_path: String,
+
+    /// `pair` blocks. Only `pag drift` reads them, so they stay out of the hash.
+    #[serde(skip)]
+    pub pairs: Vec<PairSpec>,
 
     /// Cached plan hash - computed lazily on first access.
     #[serde(skip)]
@@ -73,6 +77,22 @@ impl ExecutionPlan {
             plugins.push(builder.build_plugin(plugin_block)?);
         }
 
+        let mut pairs: Vec<PairSpec> = Vec::new();
+        for pair_block in &doc.pairs {
+            let name = &pair_block.name;
+            if pairs.iter().any(|c| &c.name == name) {
+                return Err(ConvertError::Plan(format!(
+                    "more than one pair named `{name}`"
+                )));
+            }
+            if pipelines.iter().any(|p| &p.name == name) {
+                return Err(ConvertError::Plan(format!(
+                    "pair \"{name}\": a pipeline is already named `{name}`"
+                )));
+            }
+            pairs.push(builder.build_pair(pair_block)?);
+        }
+
         // Collect all environment variable usage throughout the document
         let mut env_collector = EnvVarCollector::new();
         env_collector.collect_document(doc, |expr| builder.eval_expression(expr).ok());
@@ -91,6 +111,7 @@ impl ExecutionPlan {
             plugins,
             env_vars: env_collector.env_vars,
             config_path: String::new(),
+            pairs,
             hash_cache: OnceLock::new(),
         })
     }

@@ -1,7 +1,8 @@
-use super::fmt::{BAR_W, bar, fmt_rows, plural, truncate_list};
+use super::fmt::{BAR_W, bar, filter_preview, fmt_rows, plural, trunc, truncate_list};
 use super::sample::card_sample;
 use super::section;
 use super::style::Sty;
+use engine_core::plan::pair::{PairSide, PairSpec};
 use engine_planner::plan::{
     execution::migration_report::MigrationReport,
     pipeline::{cascade::CascadeTablePlan, plan::PipelinePlan},
@@ -15,6 +16,7 @@ use std::fmt::Write as _;
 const NAME_W: usize = 18;
 const FLOW_W: usize = 26;
 const ROWS_W: usize = 9;
+const FILTER_W: usize = 60;
 const LABEL_W: usize = 32;
 
 /// One branch line under a pipeline card. `label` is plain (so it can be padded);
@@ -60,6 +62,54 @@ pub(super) fn pipeline_cards(out: &mut String, r: &MigrationReport, s: &Sty) {
         );
         out.push('\n');
     }
+}
+
+/// One line per `pair` block, aligned with the pipeline cards above.
+pub(super) fn pair_cards(out: &mut String, pairs: &[PairSpec], s: &Sty) {
+    if pairs.is_empty() {
+        return;
+    }
+
+    section(
+        out,
+        s,
+        "Pairs (source and target must hold the same rows; checked by pag drift)",
+    );
+
+    for p in pairs {
+        let format_side = |side: &PairSide| format!("{}.{}", side.connection.name, side.table);
+
+        let _ = writeln!(
+            out,
+            "  {} {}  {}",
+            s.bold(s.glyph_pipe()),
+            s.bold(&format!("{:<NAME_W$}", p.name)),
+            s.dim(&format!(
+                "{} → {}",
+                format_side(&p.source),
+                format_side(&p.target)
+            )),
+        );
+
+        // Each side's `where`, as it will be queried.
+        let filters: Vec<(&str, String)> = [("source", &p.source), ("target", &p.target)]
+            .into_iter()
+            .filter_map(|(label, side)| {
+                let expr = side.filter.as_ref()?.expr.as_ref()?;
+                Some((label, trunc(&filter_preview(expr, true), FILTER_W)))
+            })
+            .collect();
+
+        for (j, (label, preview)) in filters.iter().enumerate() {
+            let tree = s.dim(if j + 1 == filters.len() { "└" } else { "├" });
+            let _ = writeln!(
+                out,
+                "    {tree} {label}  {}",
+                s.dim(&format!("where {preview}"))
+            );
+        }
+    }
+    out.push('\n');
 }
 
 /// Render a card's tree branches, followed by the sample block (if enabled),

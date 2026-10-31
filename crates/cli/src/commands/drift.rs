@@ -11,7 +11,8 @@ use engine_verify::{
 use model::integrity::{
     drift::DriftRun,
     import::IMPORT_PREFIX,
-    report::{DivergenceReportKind, ReportResult, TableReport},
+    pair::PAIR_PREFIX,
+    report::{DivergenceReportKind, Recheck, ReportResult, TableReport},
 };
 use std::{sync::Arc, time::Duration};
 use tracing::info;
@@ -127,10 +128,17 @@ fn print_run(run: &DriftRun) {
 
 fn format_table(t: &TableReport) -> String {
     let name = display_name(t);
+    let recheck = match &t.recheck {
+        Some(Recheck::Done { settled }) if *settled > 0 => {
+            format!(", {} settled after grace", commas(*settled))
+        }
+        Some(Recheck::Skipped { reason }) => format!(", not re-checked: {reason}"),
+        _ => String::new(),
+    };
 
     match t.result {
         ReportResult::Match => format!(
-            "✓ {name} - match ({} rows, {}ms)",
+            "✓ {name} - match ({} rows, {}ms{recheck})",
             commas(t.expected_rows),
             commas(t.duration_ms)
         ),
@@ -141,7 +149,7 @@ fn format_table(t: &TableReport) -> String {
                 ""
             };
             let mut out = format!(
-                "✗ {name} - MISMATCH{new} ({} missing, {} changed, {} extra)",
+                "✗ {name} - MISMATCH{new} ({} missing, {} changed, {} extra{recheck})",
                 commas(t.missing),
                 commas(t.changed),
                 commas(t.extra)
@@ -174,9 +182,12 @@ fn format_table(t: &TableReport) -> String {
 }
 
 fn display_name(t: &TableReport) -> String {
-    match t.pipeline.strip_prefix(IMPORT_PREFIX) {
-        Some(name) => format!("import {name} ({})", t.table),
-        None => format!("{}/{}", t.pipeline, t.table),
+    if let Some(name) = t.pipeline.strip_prefix(IMPORT_PREFIX) {
+        format!("import {name} ({})", t.table)
+    } else if let Some(name) = t.pipeline.strip_prefix(PAIR_PREFIX) {
+        format!("pair {name} ({})", t.table)
+    } else {
+        format!("{}/{}", t.pipeline, t.table)
     }
 }
 

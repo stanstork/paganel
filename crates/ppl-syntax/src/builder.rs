@@ -1,7 +1,10 @@
 use crate::{
     ast::{
         attribute::Attribute,
-        block::{ConnectionBlock, DefineBlock, ExecutionBlock, PluginBlock},
+        block::{
+            ColumnMatch, ConnectionBlock, DefineBlock, ExecutionBlock, PairBlock, PairSideBlock,
+            PluginBlock,
+        },
         doc::PplDocument,
         dotpath::DotPath,
         expr::{Expression, ExpressionKind, PluginCall, PluginInputField, WhenBranch},
@@ -53,6 +56,7 @@ fn build_document(mut pairs: Pairs<Rule>) -> BuildResult<PplDocument> {
     let mut connections = Vec::new();
     let mut pipelines = Vec::new();
     let mut plugins = Vec::new();
+    let mut pairs = Vec::new();
 
     for pair in program.into_inner() {
         match pair.as_rule() {
@@ -71,6 +75,9 @@ fn build_document(mut pairs: Pairs<Rule>) -> BuildResult<PplDocument> {
             Rule::plugin_block => {
                 plugins.push(build_plugin_block(pair)?);
             }
+            Rule::pair_block => {
+                pairs.push(build_pair_block(pair)?);
+            }
             Rule::EOI => {}
             _ => {}
         }
@@ -82,6 +89,7 @@ fn build_document(mut pairs: Pairs<Rule>) -> BuildResult<PplDocument> {
         connections,
         pipelines,
         plugins,
+        pairs,
         span,
     })
 }
@@ -255,6 +263,78 @@ fn build_plugin_block(pair: Pair<Rule>) -> BuildResult<PluginBlock> {
         nested_blocks,
         span,
     })
+}
+
+fn build_pair_block(pair: Pair<Rule>) -> BuildResult<PairBlock> {
+    let span = pair_to_span(&pair);
+    let mut name = String::new();
+    let mut attributes = Vec::new();
+    let mut sides = Vec::new();
+    let mut map = Vec::new();
+
+    for inner in pair.into_inner() {
+        match inner.as_rule() {
+            Rule::lit_string => name = parse_string_literal(inner.as_str()),
+            Rule::attribute => attributes.push(build_attribute(inner)?),
+            Rule::pair_side => sides.push(build_pair_side(inner)?),
+            Rule::pair_map => {
+                for line in inner.into_inner() {
+                    if line.as_rule() == Rule::column_match {
+                        map.push(build_column_match(line)?);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(PairBlock {
+        name,
+        attributes,
+        sides,
+        map,
+        span,
+    })
+}
+
+fn build_pair_side(pair: Pair<Rule>) -> BuildResult<PairSideBlock> {
+    let span = pair_to_span(&pair);
+    let mut kind = String::new();
+    let mut attributes = Vec::new();
+    let mut where_clauses = Vec::new();
+
+    for inner in pair.into_inner() {
+        match inner.as_rule() {
+            Rule::ident => kind = inner.as_str().to_string(),
+            Rule::attribute => attributes.push(build_attribute(inner)?),
+            Rule::where_block => where_clauses.push(build_where_clause(inner)?),
+            _ => {}
+        }
+    }
+
+    Ok(PairSideBlock {
+        kind,
+        attributes,
+        where_clauses,
+        span,
+    })
+}
+
+fn build_column_match(pair: Pair<Rule>) -> BuildResult<ColumnMatch> {
+    let span = pair_to_span(&pair);
+    let paths: Vec<DotPath> = pair
+        .into_inner()
+        .filter(|p| p.as_rule() == Rule::dotted_ident)
+        .map(|p| DotPath::from_string(p.as_str(), pair_to_span(&p)))
+        .collect();
+
+    let [left, right] = <[DotPath; 2]>::try_from(paths).map_err(|_| BuildError {
+        message: "map line must be `source.column = target.column`".to_string(),
+        line: span.line,
+        column: span.column,
+    })?;
+
+    Ok(ColumnMatch { left, right, span })
 }
 
 fn build_nested_block(pair: Pair<Rule>) -> BuildResult<NestedBlock> {

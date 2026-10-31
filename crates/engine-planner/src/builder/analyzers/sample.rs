@@ -18,17 +18,12 @@ use crate::{
 };
 use async_trait::async_trait;
 use connectors::sql::{
+    filter::compile::compile_filter,
     query::generator::QueryGenerator,
     request::{FetchRowsRequest, FetchRowsRequestBuilder},
 };
 use engine_processing::io::{
-    driver::SchemaDriver,
-    filter::{
-        compiler::{FilterCompiler, sql::SqlFilterCompiler},
-        utils::combine_filters,
-    },
-    format::DataFormat,
-    linked::LinkedSource,
+    driver::SchemaDriver, filter::combine_filters, format::DataFormat, linked::LinkedSource,
 };
 use engine_processing::{
     EnvContext,
@@ -704,7 +699,7 @@ impl<S: SchemaDriver> SampleCollector<S> {
         }
 
         let filter_clause = combine_filters(&pipeline.source.filters)
-            .map(|cond| SqlFilterCompiler::compile(&cond))
+            .map(|cond| compile_filter(&cond))
             .transpose()
             .map_err(|e| query_err(e.to_string()))?
             .map(|c| c.for_table(&pipeline.source.table, &joins));

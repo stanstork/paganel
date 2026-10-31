@@ -1,7 +1,7 @@
 use crate::{
     ast::{
         attribute::Attribute,
-        block::{ConnectionBlock, DefineBlock},
+        block::{ConnectionBlock, DefineBlock, PairBlock},
         doc::PplDocument,
         expr::{Expression, ExpressionKind},
         pipeline::{FromBlock, PipelineBlock, ToBlock},
@@ -114,6 +114,10 @@ impl SemanticValidator {
 
         for pipeline in &document.pipelines {
             self.validate_pipeline_block(pipeline);
+        }
+
+        for pair in &document.pairs {
+            self.validate_pair_block(pair);
         }
     }
 
@@ -276,6 +280,28 @@ impl SemanticValidator {
         if let Some(settings) = &block.settings_block {
             for attr in &settings.attributes {
                 self.validate_expression(&attr.value);
+            }
+        }
+    }
+
+    fn validate_pair_block(&mut self, block: &PairBlock) {
+        for side in ["source", "target"] {
+            let Some(block_side) = block.sides.iter().find(|s| s.kind == side) else {
+                self.issues.add_error(ValidationIssue::error(
+                    ValidationIssueKind::MissingRequiredField {
+                        block_type: "pair".to_string(),
+                        field: side.to_string(),
+                    },
+                    block.span,
+                ));
+                continue;
+            };
+
+            for attr in &block_side.attributes {
+                self.validate_expression(&attr.value);
+                if attr.key.name == "connection" {
+                    self.validate_endpoint_ref(&attr.value);
+                }
             }
         }
     }

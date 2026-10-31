@@ -11,14 +11,8 @@ use crate::{
     },
 };
 use async_trait::async_trait;
-use connectors::sql::metadata::table::TableMetadata;
-use engine_processing::io::{
-    driver::SchemaDriver,
-    filter::{
-        compiler::{FilterCompiler, sql::SqlFilterCompiler},
-        utils::combine_filters,
-    },
-};
+use connectors::sql::{filter::compile::compile_filter, metadata::table::TableMetadata};
+use engine_processing::io::{driver::SchemaDriver, filter::combine_filters};
 use expression_engine::ExpressionAnalyzer;
 use model::execution::pipeline::DataSource;
 use std::{collections::HashSet, sync::Arc};
@@ -135,8 +129,8 @@ impl<S: SchemaDriver, D: SchemaDriver> PlanAnalyzer<S, D> for FilterAnalyzer<S> 
             None => return Ok(None),
         };
 
-        let sql_filter = SqlFilterCompiler::compile(&expr)
-            .map_err(|e| AnalyzerError::error("filter", e.to_string()))?;
+        let sql_filter =
+            compile_filter(&expr).map_err(|e| AnalyzerError::error("filter", e.to_string()))?;
         let columns = sql_filter.columns();
 
         self.validate_columns(&columns, &metadata, ctx)

@@ -1,4 +1,5 @@
 use crate::format::commas;
+use connectors::sql::filter::expr::SqlFilterExpr;
 use model::execution::row_count::RowCount;
 
 /// Width of the magnitude bar, in cells.
@@ -81,9 +82,43 @@ pub(super) fn trunc(v: &str, max: usize) -> String {
     }
 }
 
+/// A side's `where` in readable form.
+pub(crate) fn filter_preview(expr: &SqlFilterExpr, top: bool) -> String {
+    let (exprs, op) = match expr {
+        SqlFilterExpr::Leaf(c) if c.comparator == "IS" || c.comparator == "IS NOT" => {
+            return format!("{} {} NULL", c.column, c.comparator);
+        }
+        SqlFilterExpr::Leaf(c) => {
+            let bare =
+                c.value.parse::<f64>().is_ok() || matches!(c.value.as_str(), "true" | "false");
+            let value = if bare {
+                c.value.clone()
+            } else {
+                format!("'{}'", c.value)
+            };
+            return format!("{} {} {value}", c.column, c.comparator);
+        }
+        SqlFilterExpr::And(exprs) => (exprs, " AND "),
+        SqlFilterExpr::Or(exprs) => (exprs, " OR "),
+    };
+
+    let joined = exprs
+        .iter()
+        .map(|e| filter_preview(e, false))
+        .collect::<Vec<_>>()
+        .join(op);
+
+    if top || exprs.len() < 2 {
+        joined
+    } else {
+        format!("({joined})")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use connectors::sql::filter::condition::Condition;
 
     #[test]
     fn fmt_seconds_formats_ranges() {
@@ -124,5 +159,30 @@ mod tests {
         // Normal counts are unaffected.
         assert_eq!(fmt_rows(&RowCount::exact(1000)), "1,000");
         assert_eq!(fmt_rows(&RowCount::estimated(1000, 0.9)), "~1,000");
+    }
+
+    fn leaf(column: &str, comparator: &str, value: &str) -> SqlFilterExpr {
+        SqlFilterExpr::leaf(Condition {
+            table: "orders".into(),
+            column: column.into(),
+            comparator: comparator.into(),
+            value: value.into(),
+        })
+    }
+
+    #[test]
+    fn filter_preview_reads_like_the_where_block() {
+        let expr = SqlFilterExpr::and(vec![
+            leaf("status", "=", "paid"),
+            SqlFilterExpr::or(vec![
+                leaf("total", ">=", "10.5"),
+                leaf("note", "IS", "NULL"),
+            ]),
+        ]);
+
+        assert_eq!(
+            filter_preview(&expr, true),
+            "status = 'paid' AND (total >= 10.5 OR note IS NULL)"
+        );
     }
 }
