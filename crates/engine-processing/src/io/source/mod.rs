@@ -1,9 +1,5 @@
 use crate::io::{
-    filter::{
-        Filter,
-        compiler::{FilterCompiler, csv::CsvFilterCompiler, sql::SqlFilterCompiler},
-        utils::combine_filters,
-    },
+    filter::{Filter, combine_filters},
     format::DataFormat,
     linked::LinkedSource,
     source::{
@@ -13,10 +9,11 @@ use crate::io::{
 };
 use connectors::{
     drivers::csv::{
-        adapter::CsvAdapter, metadata::CsvMetadata, settings::CsvSettings, source::CsvDataSource,
+        adapter::CsvAdapter, compile as csv_filter, metadata::CsvMetadata, settings::CsvSettings,
+        source::CsvDataSource,
     },
     error::DriverError,
-    sql::metadata::table::TableMetadata,
+    sql::{filter::compile as sql_filter, metadata::table::TableMetadata},
     traits::{introspector::SchemaIntrospector, reader::DataReader},
 };
 use engine_wasm::runtime::instance::PluginInstance;
@@ -382,12 +379,12 @@ impl Source {
 
         match format {
             DataFormat::MySql | DataFormat::Postgres => {
-                let filter = SqlFilterCompiler::compile(&combined_condition)
+                let filter = sql_filter::compile_filter(&combined_condition)
                     .map_err(|e| DriverError::QueryError(e.to_string()))?;
                 Ok(Some(Filter::Sql(filter)))
             }
             DataFormat::Csv => {
-                let filter = CsvFilterCompiler::compile(&combined_condition)
+                let filter = csv_filter::compile_filter(&combined_condition)
                     .map_err(|e| DriverError::QueryError(e.to_string()))?;
                 Ok(Some(Filter::Csv(filter)))
             }

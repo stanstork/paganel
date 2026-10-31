@@ -74,6 +74,7 @@ fn test_undefined_connection_reference() {
         }],
         span: span(1, 1),
         plugins: vec![],
+        pairs: vec![],
     };
 
     let result = validate(&doc);
@@ -116,6 +117,7 @@ fn test_undefined_pipeline_reference() {
         }],
         span: span(1, 1),
         plugins: vec![],
+        pairs: vec![],
     };
 
     let result = validate(&doc);
@@ -173,6 +175,7 @@ fn test_undefined_define_constant() {
         }],
         span: span(1, 1),
         plugins: vec![],
+        pairs: vec![],
     };
 
     let result = validate(&doc);
@@ -342,4 +345,40 @@ fn test_validate_plugin_check_undefined_plugin() {
         })
         .collect();
     assert_eq!(plugin_errs.len(), 1);
+}
+
+#[test]
+fn test_pair_checks_both_sides() {
+    let doc = parse(
+        r#"
+            connection "app" {
+                driver = "postgres"
+                url    = "localhost"
+            }
+            pair "orders" {
+                source { connection = connection.app     table = "orders" }
+                target { connection = connection.missing table = "orders" }
+            }
+            pair "no_target" {
+                source { connection = connection.app table = "orders" }
+            }
+        "#,
+    )
+    .expect("parse ok");
+
+    let result = validate(&doc);
+    assert!(result.errors.iter().any(|e| matches!(
+        &e.kind,
+        ValidationIssueKind::UndefinedConnection { name } if name == "missing"
+    )));
+    assert!(result.errors.iter().any(|e| matches!(
+        &e.kind,
+        ValidationIssueKind::MissingRequiredField { block_type, field }
+            if block_type == "pair" && field == "target"
+    )));
+    // `app` is used by a pair, so it is not reported unused.
+    assert!(!result.warnings.iter().any(|w| matches!(
+        &w.kind,
+        ValidationIssueKind::UnusedConnection { name } if name == "app"
+    )));
 }

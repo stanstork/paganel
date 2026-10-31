@@ -9,7 +9,7 @@ use engine_planner::plan::{
 use std::fmt::Write as _;
 use std::path::Path;
 
-pub(super) fn header(out: &mut String, r: &MigrationReport, s: &Sty) {
+pub(super) fn header(out: &mut String, r: &MigrationReport, pairs: usize, s: &Sty) {
     let name = Path::new(&r.config_path)
         .file_name()
         .and_then(|n| n.to_str())
@@ -17,12 +17,16 @@ pub(super) fn header(out: &mut String, r: &MigrationReport, s: &Sty) {
 
     let sum = &r.summary;
     let tables = tables_to_create(r);
+    let pairs = match pairs {
+        0 => String::new(),
+        n => format!(" · {n} pair{}", plural(n)),
+    };
     let _ = writeln!(out, "{} {} {}", s.bold("pag plan"), s.dim("·"), name);
     let _ = writeln!(
         out,
         "{}",
         s.dim(&format!(
-            "{} pipeline{} · {} connection{} · {} rows · {} table{} to create",
+            "{} pipeline{}{pairs} · {} connection{} · {} rows · {} table{} to create",
             sum.total_pipelines,
             plural(sum.total_pipelines),
             sum.total_connections,

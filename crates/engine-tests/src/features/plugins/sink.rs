@@ -42,7 +42,7 @@ mod tests {
     #[traced_test]
     #[tokio::test(flavor = "multi_thread")]
     async fn wasm_sink_receives_all_rows() {
-        // Sink has no DB side effect; reset only to clear sled state between runs.
+        // Sink has no DB side effect; reset only to clear the state store between runs.
         reset_postgres_schema().await;
 
         let total = get_row_count("actor", "sakila", DbType::MySql).await;

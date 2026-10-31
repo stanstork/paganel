@@ -1,5 +1,5 @@
 use crate::ast::{
-    block::{ConnectionBlock, DefineBlock, ExecutionBlock, PluginBlock},
+    block::{ConnectionBlock, DefineBlock, ExecutionBlock, PairBlock, PluginBlock},
     pipeline::PipelineBlock,
     span::Span,
 };
@@ -13,6 +13,7 @@ pub struct PplDocument {
     pub connections: Vec<ConnectionBlock>,
     pub pipelines: Vec<PipelineBlock>,
     pub plugins: Vec<PluginBlock>,
+    pub pairs: Vec<PairBlock>,
     pub span: Span,
 }
 
@@ -29,6 +30,7 @@ mod tests {
             connections: vec![],
             pipelines: vec![],
             plugins: vec![],
+            pairs: vec![],
             span,
         };
 
@@ -37,5 +39,6 @@ mod tests {
         assert_eq!(doc.connections.len(), 0);
         assert_eq!(doc.pipelines.len(), 0);
         assert_eq!(doc.plugins.len(), 0);
+        assert_eq!(doc.pairs.len(), 0);
     }
 }

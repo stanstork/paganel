@@ -14,6 +14,9 @@ use tracing::{debug, info};
 /// Rows between clock reads in the per-row diff loop.
 const DIFF_CLOCK_SAMPLE: u64 = 1 << 16;
 
+/// Differing keys kept as raw bytes for a pair's re-check.
+pub const MAX_RECHECK_KEYS: usize = 1000;
+
 #[derive(Debug, Clone)]
 pub struct DiffInput {
     pub table: String,
@@ -38,6 +41,7 @@ pub struct DiffOutcome {
     pub actual_root: [u8; 32],
     pub summary: DivergenceSummary,
     pub divergences: Vec<Divergence>,
+    pub divergent_keys: Vec<Vec<u8>>,
     pub expected_seen: u64,
 }
 
@@ -67,8 +71,13 @@ pub fn diff_keyed_sets(
     };
 
     let mut divergences: Vec<Divergence> = Vec::new();
+    let mut divergent_keys: Vec<Vec<u8>> = Vec::new();
 
     let mut record = |kind: DivergenceKind, key: &[u8]| {
+        if divergent_keys.len() < MAX_RECHECK_KEYS {
+            divergent_keys.push(key.to_vec());
+        }
+
         if divergences.len() < MAX_REPORTED_DIVERGENCES {
             divergences.push(Divergence {
                 key: describe(key, &input.key_columns),
@@ -169,6 +178,7 @@ pub fn diff_keyed_sets(
         actual_root: acc.finish(),
         summary,
         divergences,
+        divergent_keys,
         expected_seen,
     })
 }
@@ -228,7 +238,7 @@ mod tests {
     }
 
     /// Build a store-shaped iterator: entries must be in ascending key order,
-    /// exactly as sled yields them.
+    /// exactly as the row-hash log yields them.
     fn iter(rows: &[(&[u8], u8)]) -> RowHashIter {
         let mut owned: Vec<KeyedRowHash> = rows
             .iter()
@@ -263,7 +273,7 @@ mod tests {
             options,
         )
         .expect("diff");
-        // Every committed row is streamed off the (in-memory) apply set here, so
+        // Every committed row is streamed off the (in-memory) baseline set here, so
         // the log-consistency invariant verify relies on must hold.
         assert_eq!(out.expected_seen, expected.len() as u64);
         (out.actual_root, out.summary, out.divergences)
@@ -409,6 +419,27 @@ mod tests {
         assert_eq!(summary.extra, 1, "d");
     }
 
+    /// A pair re-reads differing keys, so they are kept as stored bytes,
+    /// in key order, whatever the kind.
+    #[test]
+    fn differing_keys_are_kept_raw_for_a_recheck() {
+        let expected: &[(&[u8], u8)] = &[(b"a", 1), (b"b", 2), (b"c", 3)];
+        let r = receipt(expected);
+        let out = diff_keyed_sets(
+            iter(expected),
+            iter(&[(b"a", 1), (b"c", 9), (b"d", 4)]),
+            &DiffInput::from_receipt(&r),
+            3,
+            VerifyOptions::default(),
+        )
+        .expect("diff");
+
+        assert_eq!(
+            out.divergent_keys,
+            [b"b".to_vec(), b"c".to_vec(), b"d".to_vec()]
+        );
+    }
+
     #[test]
     fn empty_destination_reports_every_row_missing() {
         let (_, summary, _) = diff(&[(b"a", 1), (b"b", 2)], &[]);
@@ -419,7 +450,7 @@ mod tests {
     /// An empty committed set with a populated destination flags every row as
     /// `extra`, and `expected_seen` is 0. That zero (against a receipt that
     /// expected rows) is what `verify_table` turns into `LogUnavailable` instead
-    /// of a false mismatch when the apply row-hash log is missing.
+    /// of a false mismatch when the baseline row-hash log is missing.
     #[test]
     fn no_committed_rows_yields_all_extra_and_zero_expected_seen() {
         // `diff` asserts expected_seen == 0 for an empty committed set.

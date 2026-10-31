@@ -11,14 +11,13 @@ use crate::{
 };
 use async_trait::async_trait;
 use connectors::{
-    sql::{query::generator::QueryGenerator, request::FetchRowsRequestBuilder},
+    sql::{
+        filter::compile::compile_filter, query::generator::QueryGenerator,
+        request::FetchRowsRequestBuilder,
+    },
     sql_filter_expr,
 };
-use engine_processing::io::{
-    driver::SchemaDriver,
-    filter::compiler::{FilterCompiler, sql::SqlFilterCompiler},
-    linked::build_join_clauses,
-};
+use engine_processing::io::{driver::SchemaDriver, linked::build_join_clauses};
 use expression_engine::ExpressionAnalyzer;
 use model::execution::{
     expr::CompiledExpression,
@@ -201,7 +200,7 @@ impl ValidationAnalyzer {
             Vec::new()
         };
 
-        let sql_filter = SqlFilterCompiler::compile(check)
+        let sql_filter = compile_filter(check)
             .map_err(|e| ValidationAnalyzerError::ParseError(e.to_string()))?;
         let filter_expr = sql_filter
             .expr

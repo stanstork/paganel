@@ -13,17 +13,12 @@ use crate::{
 use async_trait::async_trait;
 use chrono::Utc;
 use connectors::sql::{
+    filter::compile::compile_filter,
     metadata::{index::IndexMetadata, table::TableMetadata},
     query::generator::QueryGenerator,
     request::FetchRowsRequestBuilder,
 };
-use engine_processing::io::{
-    driver::SchemaDriver,
-    filter::{
-        compiler::{FilterCompiler, sql::SqlFilterCompiler},
-        utils::combine_filters,
-    },
-};
+use engine_processing::io::{driver::SchemaDriver, filter::combine_filters};
 use model::execution::{pipeline::DataSource, row_count::RowCount};
 use std::sync::Arc;
 use tracing::{info, warn};
@@ -149,7 +144,7 @@ impl<S: SchemaDriver> SourceAnalyzer<S> {
         let total_rows = ctx.source_cache.count_rows(&source.table, None).await;
 
         let filtered_rows = match combine_filters(&source.filters) {
-            Some(filter) => match SqlFilterCompiler::compile(&filter) {
+            Some(filter) => match compile_filter(&filter) {
                 Ok(sql_filter) => {
                     if ctx.use_exact_where {
                         Some(

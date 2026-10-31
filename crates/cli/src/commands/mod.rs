@@ -1,12 +1,13 @@
 use crate::{Cli, error::CliError};
-use clap::{Subcommand, ValueEnum};
+use clap::{Args, Subcommand, ValueEnum};
 use engine_infra::shutdown::ShutdownSignal;
 use engine_processing::EnvContext;
 use engine_state::{StateStore, models::RunStatus};
 use model::execution::flags::IntegrityMode;
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 pub mod apply;
+pub mod drift;
 pub mod pause;
 pub mod ping;
 pub mod plan;
@@ -14,6 +15,7 @@ pub mod plugin;
 pub mod receipt;
 pub mod reset;
 pub mod resume;
+pub mod state;
 pub mod status;
 pub mod verify;
 pub mod version;
@@ -69,7 +71,7 @@ pub enum SampleMethod {
     Id,
 }
 
-#[derive(clap::Subcommand)]
+#[derive(Subcommand)]
 pub enum PluginCmd {
     /// Compile a JavaScript plugin to WASM.
     Compile {
@@ -117,6 +119,71 @@ pub enum PluginCmd {
         #[arg(long)]
         json: bool,
     },
+}
+
+#[derive(Subcommand)]
+pub enum StateCmd {
+    /// Hash a table Paganel did not migrate and store it as a baseline for drift.
+    Import {
+        #[arg(short = 'c', long)]
+        config: Option<String>,
+        /// Connection block name in the config; optional when the config has exactly one.
+        #[arg(long)]
+        connection: Option<String>,
+        #[arg(long)]
+        table: String,
+        /// Defaults to the table name when it is a valid import name.
+        #[arg(long)]
+        name: Option<String>,
+        /// Key columns when the table has no primary key (comma-separated).
+        #[arg(long, value_delimiter = ',')]
+        key: Vec<String>,
+    },
+    /// List imported tables.
+    List {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Remove an import: its record, receipt and row hashes.
+    Rm { name: String },
+}
+
+/// Arguments for `pag drift`.
+#[derive(Args)]
+pub struct DriftArgs {
+    #[arg(
+        short = 'c',
+        long,
+        help = "Path to PPL config file (auto-discovered if not specified)"
+    )]
+    pub config: Option<String>,
+
+    /// Print each run as JSON; with --watch, one line per run
+    #[arg(long)]
+    pub json: bool,
+
+    /// Check only this pipeline or import (repeatable)
+    #[arg(long, value_name = "NAME")]
+    pub filters: Vec<String>,
+
+    #[arg(
+        long,
+        help = "Accept destination rows the receipt does not cover instead of failing on them"
+    )]
+    pub allow_extra: bool,
+
+    /// Repeat until interrupted
+    #[arg(long)]
+    pub watch: bool,
+
+    /// Time between runs with --watch: a number and s, m, h or d, e.g. 15m or 24h
+    #[arg(
+        long,
+        default_value = "24h",
+        value_parser = drift::parse_interval,
+        requires = "watch"
+    )]
+    pub interval: Duration,
 }
 
 #[derive(Subcommand)]
@@ -192,6 +259,7 @@ pub enum Commands {
         integrity: bool,
     },
     /// Check the destination against the integrity receipts from `apply --integrity` (no source connection)
+    #[command(after_help = "Exit codes: 0 match, 1 error, 3 mismatch, 4 inconclusive")]
     Verify {
         #[arg(
             short = 'c',
@@ -297,6 +365,14 @@ pub enum Commands {
         #[command(subcommand)]
         cmd: PluginCmd,
     },
+    /// Drift baselines for tables Paganel did not migrate: import, list, remove.
+    State {
+        #[command(subcommand)]
+        cmd: StateCmd,
+    },
+    /// Re-check tables against their receipts and imports, once or on an interval
+    #[command(after_help = "Exit codes: 0 match, 1 error, 3 mismatch, 4 inconclusive")]
+    Drift(DriftArgs),
 }
 
 /// Executes the appropriate command based on CLI arguments
@@ -363,5 +439,7 @@ pub async fn execute_command(
         Commands::Pause { config } => pause::execute(Some(config.clone()), env).await,
         Commands::Receipt { config, json } => receipt::execute(config.clone(), *json, env).await,
         Commands::Plugin { cmd } => plugin::run(cmd, env.clone()).await,
+        Commands::State { cmd } => state::run(cmd, env.clone()).await,
+        Commands::Drift(drift_args) => drift::execute(drift_args, env).await,
     }
 }

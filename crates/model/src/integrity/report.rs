@@ -13,6 +13,8 @@ pub enum ReportResult {
     NoPriorRun,
     /// A receipt exists, but its row-hash log is missing or truncated.
     LogUnavailable,
+    /// The table could not be checked.
+    Error,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -36,8 +38,14 @@ pub struct TableReport {
     /// `missing + changed + extra` is the full count.
     pub divergences: Vec<DivergenceReport>,
     pub duration_ms: u64,
-    /// Why the result is not a comparison, for `log_unavailable`.
+    /// Why the result is not a comparison, for `log_unavailable` and `error`.
     pub message: Option<String>,
+    /// Drift only: a mismatch that was not one in the previous run.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub new_since_last: bool,
+    /// Pairs only: whether differing keys were read again after `grace`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recheck: Option<Recheck>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +63,17 @@ pub enum DivergenceReportKind {
     Missing,
     Changed,
     Extra,
+}
+
+/// What a pair's re-read of its differing keys did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "status")]
+pub enum Recheck {
+    /// The keys were read again; `settled` of them matched by then and are
+    /// not counted as differences.
+    Done { settled: u64 },
+    /// The counts are from the first read alone.
+    Skipped { reason: String },
 }
 
 impl TableReport {
@@ -75,6 +94,20 @@ impl TableReport {
             divergences: Vec::new(),
             duration_ms: 0,
             message: None,
+            new_since_last: false,
+            recheck: None,
+        }
+    }
+
+    /// A table that could not be checked.
+    pub fn error(
+        pipeline: impl Into<String>,
+        table: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            message: Some(message.into()),
+            ..Self::uncompared(pipeline.into(), table.into(), ReportResult::Error)
         }
     }
 }
@@ -131,6 +164,8 @@ impl From<&VerificationResult> for TableReport {
                     divergences: Vec::new(),
                     duration_ms: *duration_ms,
                     message: None,
+                    new_since_last: false,
+                    recheck: None,
                 }
             }
             VerificationResult::Mismatch {
@@ -154,6 +189,8 @@ impl From<&VerificationResult> for TableReport {
                 divergences: divergences.iter().map(DivergenceReport::from).collect(),
                 duration_ms: *duration_ms,
                 message: None,
+                new_since_last: false,
+                recheck: None,
             },
             VerificationResult::NoPriorRun { pipeline, table } => {
                 Self::uncompared(pipeline.clone(), table.clone(), ReportResult::NoPriorRun)

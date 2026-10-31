@@ -1,6 +1,7 @@
 use crate::sql::join::clause::JoinClause;
 use expr::SqlFilterExpr;
 
+pub mod compile;
 pub mod condition;
 pub mod expr;
 
@@ -34,6 +35,13 @@ impl SqlFilter {
             .expr
             .as_ref()
             .and_then(|e| e.filter_for_table(table, joins));
+        SqlFilter { expr }
+    }
+
+    /// Qualify every condition with `table`, so a `where` written with bare
+    /// column names (`status == "paid"`) renders as `table.status`.
+    pub fn on_table(&self, table: &str) -> SqlFilter {
+        let expr = self.expr.as_ref().map(|e| e.on_table(table));
         SqlFilter { expr }
     }
 

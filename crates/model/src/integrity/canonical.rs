@@ -280,6 +280,34 @@ pub fn describe_key(bytes: &[u8], col_names: &[String]) -> String {
     }
 }
 
+/// Decode canonically-encoded key bytes back into values a query can bind.
+pub fn decode_key(bytes: &[u8]) -> Option<Vec<Value>> {
+    let mut cursor = 0usize;
+    let mut values = Vec::new();
+
+    while cursor < bytes.len() {
+        let tag = *bytes.get(cursor)?;
+        cursor += 1;
+
+        let value = match tag {
+            TAG_INT => Value::Int(i64::from_le_bytes(take_array::<8>(bytes, &mut cursor)?)),
+            TAG_UINT => Value::UInt(u64::from_le_bytes(take_array::<8>(bytes, &mut cursor)?)),
+            TAG_STRING => {
+                let raw = take_prefixed(bytes, &mut cursor)?;
+                Value::String(String::from_utf8(raw.to_vec()).ok()?)
+            }
+            TAG_UUID => Value::Uuid(uuid::Uuid::from_bytes(take_array::<16>(
+                bytes,
+                &mut cursor,
+            )?)),
+            _ => return None,
+        };
+        values.push(value);
+    }
+
+    Some(values)
+}
+
 /// Decode one canonical value, advancing `cursor`. `None` on malformed input.
 fn read_value(b: &[u8], cursor: &mut usize) -> Option<String> {
     let tag = *b.get(*cursor)?;
@@ -624,5 +652,35 @@ mod tests {
         // extract the string after the 5-byte header (tag + 4-byte len)
         let s = std::str::from_utf8(&encoded[5..]).unwrap();
         assert_eq!(s, r#"{"a":1,"b":2}"#);
+    }
+
+    #[test]
+    fn decode_key_round_trips_bindable_keys() {
+        let id = uuid::Uuid::from_u128(42);
+        let keys = [
+            vec![Value::Int(-7)],
+            vec![Value::String("ACME-1 é".into())],
+            vec![Value::Uuid(id)],
+            vec![Value::Int(3), Value::String("eu".into())],
+        ];
+
+        for key in keys {
+            let bytes: Vec<u8> = key.iter().flat_map(encode).collect();
+            assert_eq!(decode_key(&bytes), Some(key));
+        }
+
+        // UInt in i64 range is stored as Int, which binds the same.
+        assert_eq!(
+            decode_key(&encode(&Value::UInt(5))),
+            Some(vec![Value::Int(5)])
+        );
+    }
+
+    #[test]
+    fn decode_key_refuses_lossy_types() {
+        let date = Value::Date(NaiveDate::from_ymd_opt(2024, 1, 15).unwrap());
+        assert_eq!(decode_key(&encode(&date)), None);
+        assert_eq!(decode_key(&encode(&Value::Null)), None);
+        assert_eq!(decode_key(&[TAG_INT, 1, 2]), None);
     }
 }

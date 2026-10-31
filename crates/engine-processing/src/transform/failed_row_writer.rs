@@ -186,6 +186,7 @@ mod tests {
             connections: vec![],
             pipelines: vec![],
             plugins: vec![],
+            pairs: vec![],
             span: Span::new(0, 0, 0, 0),
         };
         let env = Arc::new(EnvContext::empty());

@@ -1,16 +1,20 @@
 use crate::{diff::percent_of, error::VerifyError, reader::TableReader};
 use connectors::{
-    sql::metadata::table::TableMetadata, traits::introspector::SchemaIntrospector,
-    traits::reader::DataReader,
+    sql::{filter::SqlFilter, metadata::table::TableMetadata},
+    traits::{introspector::SchemaIntrospector, reader::DataReader},
 };
 use engine_core::{dispatch_driver, drivers::DriverRef};
 use engine_state::{PROGRESS_INTERVAL, RowHashLog, RowHashScope, Ticker};
 use model::{
-    integrity::{algorithm::HashAlgorithm, hasher::RowHasher, receipt::VerificationReceipt},
+    core::value::Value,
+    integrity::{
+        algorithm::HashAlgorithm, hasher::RowHasher, receipt::VerificationReceipt,
+        row_key::KeyedRowHash,
+    },
     pagination::cursor::Cursor,
     records::Record,
 };
-use query_builder::offsets::{OffsetStrategy, OffsetStrategyFactory};
+use query_builder::offsets::OffsetStrategyFactory;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use tracing::info;
 
@@ -120,29 +124,68 @@ pub async fn hash_table(
     meta: TableMetadata,
     spec: &HashSpec,
     sink: &HashSink<'_>,
+    filter: Option<&SqlFilter>,
     expected_rows: Option<u64>,
 ) -> Result<u64, VerifyError> {
-    let table = meta.name.clone();
+    let reader = table_reader(driver, &meta, spec)?.with_filter(filter.cloned());
+
+    scan(&reader, &meta, spec, expected_rows, |entries| {
+        sink.log
+            .append(sink.scope, sink.pipeline, sink.table, entries)
+            .map_err(Into::into)
+    })
+    .await
+}
+
+/// Hash only the rows whose `column` is one of `values`.
+pub(crate) async fn hash_rows_where(
+    driver: &DriverRef,
+    meta: &TableMetadata,
+    spec: &HashSpec,
+    filter: Option<&SqlFilter>,
+    column: &str,
+    values: Vec<Value>,
+) -> Result<HashMap<Vec<u8>, [u8; 32]>, VerifyError> {
+    let reader = table_reader(driver, meta, spec)?
+        .with_filter(filter.cloned())
+        .with_keys(column.to_string(), values);
+
+    let mut hashes = HashMap::new();
+    scan(&reader, meta, spec, None, |entries| {
+        hashes.extend(entries.iter().map(|e| (e.key.clone(), e.hash)));
+        Ok(())
+    })
+    .await?;
+
+    Ok(hashes)
+}
+
+pub(crate) async fn fetch_table_metadata(
+    driver: &DriverRef,
+    table: &str,
+) -> Result<TableMetadata, VerifyError> {
+    dispatch_driver!(driver, |d| {
+        let introspector: Arc<dyn SchemaIntrospector> = d.clone() as _;
+        introspector.table_metadata(table).await
+    })
+    .map_err(Into::into)
+}
+
+/// Read every page `reader` yields, hash it with `spec`, and hand each batch
+/// of keyed hashes to `on_batch`.
+async fn scan(
+    reader: &TableReader,
+    meta: &TableMetadata,
+    spec: &HashSpec,
+    expected_rows: Option<u64>,
+    mut on_batch: impl FnMut(&[KeyedRowHash]) -> Result<(), VerifyError>,
+) -> Result<u64, VerifyError> {
+    let table = &meta.name;
     let col_types: HashMap<String, String> = meta
         .columns
         .values()
         .map(|c| (c.name.clone(), c.data_type.clone()))
         .collect();
-
-    // Page over the primary key when there is one, so reads stay index-ordered;
-    // otherwise over the spec's key.
-    let page_keys = if meta.primary_keys.is_empty() {
-        spec.key_columns.clone()
-    } else {
-        meta.primary_keys.clone()
-    };
-
-    let offset_strategy = OffsetStrategyFactory::keyset_over_pk(
-        OffsetStrategyFactory::default_strategy(),
-        &table,
-        &page_keys,
-    );
-    let reader = create_table_reader(driver, meta, offset_strategy)?;
 
     let mut hasher = RowHasher::new(spec.column_order.clone(), spec.algorithm);
     let mut cursor = Some(Cursor::None);
@@ -171,8 +214,7 @@ pub async fn hash_table(
         if !rows.is_empty() {
             let refs: Vec<&Record> = rows.iter().collect();
             let entries = hasher.hash_rows(&refs, &col_types, &spec.key_columns);
-            sink.log
-                .append(sink.scope, sink.pipeline, sink.table, &entries)?;
+            on_batch(&entries)?;
         }
 
         cursor = next_cursor;
@@ -185,29 +227,28 @@ pub async fn hash_table(
     Ok(rows_read)
 }
 
-pub(crate) async fn fetch_table_metadata(
+/// A keyset reader over `meta`: paged by the primary key when there is one,
+/// so reads stay index-ordered; otherwise by the spec's key.
+fn table_reader(
     driver: &DriverRef,
-    table: &str,
-) -> Result<TableMetadata, VerifyError> {
-    dispatch_driver!(driver, |d| {
-        let introspector: Arc<dyn SchemaIntrospector> = d.clone() as _;
-        introspector.table_metadata(table).await
-    })
-    .map_err(Into::into)
-}
-
-fn create_table_reader(
-    driver: &DriverRef,
-    meta: TableMetadata,
-    offset_strategy: Arc<dyn OffsetStrategy>,
+    meta: &TableMetadata,
+    spec: &HashSpec,
 ) -> Result<TableReader, VerifyError> {
+    let page_keys = if meta.primary_keys.is_empty() {
+        spec.key_columns.clone()
+    } else {
+        meta.primary_keys.clone()
+    };
+
+    let offset_strategy = OffsetStrategyFactory::keyset_over_pk(
+        OffsetStrategyFactory::default_strategy(),
+        &meta.name,
+        &page_keys,
+    );
+
     dispatch_driver!(driver, |d| {
         let data_reader: Arc<dyn DataReader> = d.clone() as _;
-        Ok(TableReader::new(
-            data_reader,
-            meta.clone(),
-            offset_strategy.clone(),
-        ))
+        Ok(TableReader::new(data_reader, meta.clone(), offset_strategy))
     })
 }
 

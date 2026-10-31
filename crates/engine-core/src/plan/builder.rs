@@ -1119,7 +1119,10 @@ impl PlanBuilder {
         Err(ConvertError::Plan(ERR_MISSING_TO_CONNECTION.to_string()))
     }
 
-    fn compile_expression(&self, expr: &Expression) -> Result<CompiledExpression, ConvertError> {
+    pub(crate) fn compile_expression(
+        &self,
+        expr: &Expression,
+    ) -> Result<CompiledExpression, ConvertError> {
         match &expr.kind {
             ExpressionKind::Literal(lit) => match lit {
                 Literal::String(s) => Ok(CompiledExpression::Literal(Value::String(s.clone()))),
@@ -1229,7 +1232,7 @@ impl PlanBuilder {
     }
 
     // Evaluate expression with access to global definitions (for define.X references)
-    fn eval_with_definitions(&self, expr: &Expression) -> Result<Value, ConvertError> {
+    pub(crate) fn eval_with_definitions(&self, expr: &Expression) -> Result<Value, ConvertError> {
         let env = self.env.clone();
         let env_getter = move |key: &str| env.get(key);
         expression_engine::eval_ast_expression(expr, &self.global_definitions, &env_getter)
@@ -1597,7 +1600,7 @@ impl Default for PlanBuilder {
 }
 
 /// Parse duration string (e.g., "30s", "5m", "2h") to seconds
-fn parse_duration(s: &str) -> Result<u64, ConvertError> {
+pub(crate) fn parse_duration(s: &str) -> Result<u64, ConvertError> {
     let s = s.trim();
     if s.is_empty() {
         return Err(ConvertError::Plan("Empty duration string".to_string()));

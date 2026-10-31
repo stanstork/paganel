@@ -1,16 +1,12 @@
-use crate::io::filter::compiler::{FilterCompileError, FilterCompiler};
-use connectors::sql::filter::{SqlFilter, condition::Condition, expr::SqlFilterExpr};
+use crate::{
+    error::FilterCompileError,
+    sql::filter::{SqlFilter, condition::Condition, expr::SqlFilterExpr},
+};
 use model::execution::expr::{BinaryOp, CompiledExpression};
 
-pub struct SqlFilterCompiler;
-
-impl FilterCompiler for SqlFilterCompiler {
-    type Filter = SqlFilter;
-
-    fn compile(expr: &CompiledExpression) -> Result<Self::Filter, FilterCompileError> {
-        let sql_expr = compile_sql_expr(expr)?;
-        Ok(SqlFilter::with_expr(sql_expr))
-    }
+/// Compile a `where` expression into a SQL filter, or say what it cannot express.
+pub fn compile_filter(expr: &CompiledExpression) -> Result<SqlFilter, FilterCompileError> {
+    Ok(SqlFilter::with_expr(compile_sql_expr(expr)?))
 }
 
 fn compile_sql_expr(expr: &CompiledExpression) -> Result<SqlFilterExpr, FilterCompileError> {
