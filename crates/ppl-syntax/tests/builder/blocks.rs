@@ -447,3 +447,86 @@ fn test_pair_keyword_leaves_identifiers_alone() {
     assert!(doc.pairs.is_empty());
     assert_eq!(doc.pipelines.len(), 1);
 }
+
+#[test]
+fn test_build_hook_block() {
+    let input = r#"
+        hook "orders_alert" {
+            on     = ["drift.diverged", "drift.failed"]
+            target = pair.orders_copy
+
+            slack {
+                url = env("ORDERS_SLACK_URL")
+            }
+        }
+
+        hook "audit" {
+            on = ["drift.completed"]
+
+            webhook {
+                url    = env("AUDIT_URL")
+                secret = env("AUDIT_SECRET")
+            }
+        }
+    "#;
+
+    let doc = parse(input).expect("parse");
+    let names: Vec<&str> = doc.hooks.iter().map(|h| h.name.as_str()).collect();
+    assert_eq!(names, ["orders_alert", "audit"]);
+
+    let alert = &doc.hooks[0];
+    let attrs: Vec<&str> = alert
+        .attributes
+        .iter()
+        .map(|a| a.key.name.as_str())
+        .collect();
+    assert_eq!(attrs, ["on", "target"]);
+    assert_eq!(alert.nested_blocks.len(), 1);
+    assert_eq!(alert.nested_blocks[0].kind, "slack");
+
+    let audit = &doc.hooks[1];
+    assert_eq!(audit.nested_blocks[0].kind, "webhook");
+    let delivery: Vec<&str> = audit.nested_blocks[0]
+        .attributes
+        .iter()
+        .map(|a| a.key.name.as_str())
+        .collect();
+    assert_eq!(delivery, ["url", "secret"]);
+}
+
+#[test]
+fn test_hook_delivery_block_takes_only_attributes() {
+    // `slack { ... }` is a generic nested block: no blocks inside it.
+    let input = r#"
+        hook "a" {
+            on = ["drift.completed"]
+            webhook {
+                url = "https://example.com/hook"
+                headers { authorization = "token" }
+            }
+        }
+    "#;
+    assert!(parse(input).is_err());
+}
+
+#[test]
+fn test_hook_keyword_leaves_identifiers_alone() {
+    // A column called `hook` or `hook_id` is still an identifier, and `on`
+    // is only an attribute name, so `on_error` still parses.
+    let input = r#"
+        pipeline "p" {
+            from { connection = connection.a table = "t" }
+            to { connection = connection.b table = "t" }
+            select {
+                hook    = t.hook
+                hook_id = t.hook_id
+            }
+            on_error { retry { max_attempts = 3 } }
+        }
+    "#;
+
+    let doc = parse(input).expect("parse");
+    assert!(doc.hooks.is_empty());
+    assert_eq!(doc.pipelines.len(), 1);
+    assert!(doc.pipelines[0].on_error_block.is_some());
+}

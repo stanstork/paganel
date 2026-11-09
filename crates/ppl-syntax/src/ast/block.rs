@@ -70,3 +70,13 @@ pub struct ColumnMatch {
     pub right: DotPath,
     pub span: Span,
 }
+
+/// Hook block: one delivery for the events it lists
+/// Syntax: hook "alerts" { on = ["drift.diverged"] target = pair.orders slack { url = ... } }
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HookBlock {
+    pub name: String,
+    pub attributes: Vec<Attribute>,
+    pub nested_blocks: Vec<NestedBlock>,
+    pub span: Span,
+}

@@ -40,6 +40,7 @@ kw_and         = @{ "and" ~ !(ASCII_ALPHANUMERIC | "_") }
 kw_or          = @{ "or" ~ !(ASCII_ALPHANUMERIC | "_") }
 kw_plugin      = @{ "plugin" ~ !(ASCII_ALPHANUMERIC | "_") }
 kw_pair        = @{ "pair" ~ !(ASCII_ALPHANUMERIC | "_") }
+kw_hook        = @{ "hook" ~ !(ASCII_ALPHANUMERIC | "_") }
 
 // ============================================================
 // Literals
@@ -110,6 +111,9 @@ pair_block   = { kw_pair ~ lit_string ~ lbrace ~ (attribute | pair_map | pair_si
 pair_side    = { ident ~ lbrace ~ (attribute | where_block)* ~ rbrace }
 pair_map     = { kw_map ~ lbrace ~ column_match* ~ rbrace }
 column_match = { dotted_ident ~ op_eq ~ dotted_ident }
+
+// Hook block (with string name): what to POST, and where, when a command run emits an event.
+hook_block = { kw_hook ~ lit_string ~ lbrace ~ (attribute | nested_block)* ~ rbrace }
 
 // ============================================================
 // Pipeline Content
@@ -201,4 +205,4 @@ plugin_input_field = { ident ~ ":" ~ (dotted_ident | ident) }
 // Program Entry Point
 // ============================================================
 
-program = { SOI ~ (define_block | execution_block | connection_block | plugin_block | pipeline_block | pair_block)* ~ EOI }
+program = { SOI ~ (define_block | execution_block | connection_block | plugin_block | pipeline_block | pair_block | hook_block)* ~ EOI }

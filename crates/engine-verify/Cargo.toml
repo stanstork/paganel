@@ -6,14 +6,17 @@ license.workspace = true
 
 [dependencies]
 model = { path = "../model" }
+connectors = { path = "../connectors" }
+query-builder = { path = "../query-builder" }
 engine-state = { path = "../engine-state" }
 engine-core = { path = "../engine-core" }
 engine-schema = { path = "../engine-schema" }
-connectors = { path = "../connectors" }
-query-builder = { path = "../query-builder" }
+engine-infra = { path = "../engine-infra" }
 
 tokio = { version = "1.43.0", features = ["full"] }
 thiserror = "2.0.12"
 tracing = "0.1"
 chrono = "0.4.39"
 url = "2.5"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.138"

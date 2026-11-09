@@ -1,4 +1,6 @@
 use crate::integrity::{
+    import::IMPORT_PREFIX,
+    pair::PAIR_PREFIX,
     receipt::root_hex,
     result::{Divergence, DivergenceKind, VerificationResult},
 };
@@ -77,6 +79,17 @@ pub enum Recheck {
 }
 
 impl TableReport {
+    /// How drift names the table: `import x (t)`, `pair x (t)` or `pipeline/table`.
+    pub fn display_name(&self) -> String {
+        if let Some(name) = self.pipeline.strip_prefix(IMPORT_PREFIX) {
+            format!("import {name} ({})", self.table)
+        } else if let Some(name) = self.pipeline.strip_prefix(PAIR_PREFIX) {
+            format!("pair {name} ({})", self.table)
+        } else {
+            format!("{}/{}", self.pipeline, self.table)
+        }
+    }
+
     /// A row-less report for a table that was not compared.
     fn uncompared(pipeline: String, table: String, result: ReportResult) -> Self {
         Self {

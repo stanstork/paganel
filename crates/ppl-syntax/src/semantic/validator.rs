@@ -1,7 +1,7 @@
 use crate::{
     ast::{
         attribute::Attribute,
-        block::{ConnectionBlock, DefineBlock, PairBlock},
+        block::{ConnectionBlock, DefineBlock, HookBlock, PairBlock},
         doc::PplDocument,
         expr::{Expression, ExpressionKind},
         pipeline::{FromBlock, PipelineBlock, ToBlock},
@@ -118,6 +118,10 @@ impl SemanticValidator {
 
         for pair in &document.pairs {
             self.validate_pair_block(pair);
+        }
+
+        for hook in &document.hooks {
+            self.validate_hook_block(hook);
         }
     }
 
@@ -303,6 +307,13 @@ impl SemanticValidator {
                     self.validate_endpoint_ref(&attr.value);
                 }
             }
+        }
+    }
+
+    fn validate_hook_block(&mut self, block: &HookBlock) {
+        let nested = block.nested_blocks.iter().flat_map(|b| &b.attributes);
+        for attr in block.attributes.iter().chain(nested) {
+            self.validate_expression(&attr.value);
         }
     }
 

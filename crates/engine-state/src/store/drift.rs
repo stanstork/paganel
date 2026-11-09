@@ -85,6 +85,7 @@ mod tests {
             finished_at: now,
             tables: Vec::new(),
             skipped: Vec::new(),
+            notifications: Vec::new(),
         }
     }
 

@@ -1,4 +1,7 @@
-use crate::integrity::report::{ReportResult, TableReport};
+use crate::{
+    hook::result::HookDeliveryResult,
+    integrity::report::{ReportResult, TableReport},
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -23,6 +26,9 @@ pub struct DriftRun {
     pub finished_at: DateTime<Utc>,
     pub tables: Vec<TableReport>,
     pub skipped: Vec<Skipped>,
+
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notifications: Vec<HookDeliveryResult>,
 }
 
 impl DriftRun {

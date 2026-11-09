@@ -4,6 +4,7 @@
 pub mod core;
 pub mod events;
 pub mod execution;
+pub mod hook;
 pub mod integrity;
 pub mod pagination;
 pub mod records;

@@ -1,6 +1,6 @@
 use crate::{
     context::env::EnvContext,
-    plan::{builder::PlanBuilder, env::EnvVarCollector, pair::PairSpec},
+    plan::{builder::PlanBuilder, env::EnvVarCollector, hook::HookSpec, pair::PairSpec},
 };
 use model::execution::{
     config::ExecutionConfig,
@@ -34,9 +34,14 @@ pub struct ExecutionPlan {
     #[serde(skip)]
     pub config_path: String,
 
-    /// `pair` blocks. Only `pag drift` reads them, so they stay out of the hash.
+    /// Only `pag drift` reads them, so they stay out of the hash.
     #[serde(skip)]
     pub pairs: Vec<PairSpec>,
+
+    /// Where results go is not part of the plan, so they stay
+    /// out of the hash.
+    #[serde(skip)]
+    pub hooks: Vec<HookSpec>,
 
     /// Cached plan hash - computed lazily on first access.
     #[serde(skip)]
@@ -93,6 +98,17 @@ impl ExecutionPlan {
             pairs.push(builder.build_pair(pair_block)?);
         }
 
+        let mut hooks: Vec<HookSpec> = Vec::new();
+        for hook_block in &doc.hooks {
+            let name = &hook_block.name;
+            if hooks.iter().any(|h| &h.name == name) {
+                return Err(ConvertError::Plan(format!(
+                    "more than one hook named `{name}`"
+                )));
+            }
+            hooks.push(builder.build_hook(hook_block, &pipelines, &pairs)?);
+        }
+
         // Collect all environment variable usage throughout the document
         let mut env_collector = EnvVarCollector::new();
         env_collector.collect_document(doc, |expr| builder.eval_expression(expr).ok());
@@ -112,6 +128,7 @@ impl ExecutionPlan {
             env_vars: env_collector.env_vars,
             config_path: String::new(),
             pairs,
+            hooks,
             hash_cache: OnceLock::new(),
         })
     }

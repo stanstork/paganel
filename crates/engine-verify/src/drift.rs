@@ -116,6 +116,7 @@ pub async fn run_drift(
         finished_at: started_at,
         tables: Vec::new(),
         skipped: Vec::new(),
+        notifications: Vec::new(),
     };
 
     let has_pipelines = targets
