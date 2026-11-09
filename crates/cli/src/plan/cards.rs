@@ -2,6 +2,7 @@ use super::fmt::{BAR_W, bar, filter_preview, fmt_rows, plural, trunc, truncate_l
 use super::sample::card_sample;
 use super::section;
 use super::style::Sty;
+use engine_core::plan::hook::HookSpec;
 use engine_core::plan::pair::{PairSide, PairSpec};
 use engine_planner::plan::{
     execution::migration_report::MigrationReport,
@@ -109,6 +110,37 @@ pub(super) fn pair_cards(out: &mut String, pairs: &[PairSpec], s: &Sty) {
             );
         }
     }
+    out.push('\n');
+}
+
+pub(super) fn hook_cards(out: &mut String, hooks: &[HookSpec], s: &Sty) {
+    if hooks.is_empty() {
+        return;
+    }
+
+    section(out, s, "Hooks (posted after each pag drift run)");
+
+    for h in hooks {
+        let events: Vec<&str> = h.on.iter().map(|e| e.as_str()).collect();
+        let target = h
+            .target
+            .as_ref()
+            .map_or_else(|| "every target".to_string(), ToString::to_string);
+        let kind = h.delivery.kind();
+        let to = match h.delivery.unset() {
+            None => s.dim(&format!("{kind} ({})", h.delivery.host().unwrap_or("?"))),
+            Some(why) => s.yellow(&format!("{kind}: {why}")),
+        };
+
+        let _ = writeln!(
+            out,
+            "  {} {}  {} {to}",
+            s.bold(s.glyph_pipe()),
+            s.bold(&format!("{:<NAME_W$}", h.name)),
+            s.dim(&format!("{} → {target} ·", events.join(", "))),
+        );
+    }
+
     out.push('\n');
 }
 

@@ -34,6 +34,7 @@ fn test_duplicate_connection_names() {
         span: span(1, 1),
         plugins: vec![],
         pairs: vec![],
+        hooks: vec![],
     };
 
     let result = validate(&doc);
@@ -93,6 +94,7 @@ fn test_duplicate_pipeline_names() {
         span: span(1, 1),
         plugins: vec![],
         pairs: vec![],
+        hooks: vec![],
     };
 
     let result = validate(&doc);
@@ -128,6 +130,7 @@ fn test_duplicate_define_attributes() {
         span: span(1, 1),
         plugins: vec![],
         pairs: vec![],
+        hooks: vec![],
     };
 
     let result = validate(&doc);

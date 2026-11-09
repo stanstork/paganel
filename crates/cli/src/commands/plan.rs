@@ -37,14 +37,15 @@ pub async fn execute(cli: &Cli, commands: &Commands, env: Arc<EnvContext>) -> Re
         // Load core plan
         let core_plan = config::load_plan(&config_path, false, env.clone()).await?;
 
-        // Pairs alone give apply nothing to plan.
-        if core_plan.pipelines.is_empty() && !core_plan.pairs.is_empty() {
+        // Pairs and hooks alone give apply nothing to plan.
+        let (pairs, hooks) = (&core_plan.pairs, &core_plan.hooks);
+        if core_plan.pipelines.is_empty() && !(pairs.is_empty() && hooks.is_empty()) {
             let rendered = if *json {
-                serde_json::to_string_pretty(&PlanJson::new(None, &core_plan.pairs))?
+                serde_json::to_string_pretty(&PlanJson::new(None, pairs, hooks))?
             } else {
                 let color =
                     output_path.is_none() && !cli.no_color && std::io::stdout().is_terminal();
-                plan::pairs(&core_plan.pairs, color)
+                plan::drift_only(pairs, hooks, color)
             };
 
             match output_path {
@@ -92,10 +93,10 @@ pub async fn execute(cli: &Cli, commands: &Commands, env: Arc<EnvContext>) -> Re
         let to_file = output_path.is_some();
         let rendered = if *json {
             // The full machine-readable report (for CI / tooling).
-            serde_json::to_string_pretty(&PlanJson::new(Some(&report), &core_plan.pairs))?
+            serde_json::to_string_pretty(&PlanJson::new(Some(&report), pairs, hooks))?
         } else {
             let color = !to_file && !cli.no_color && std::io::stdout().is_terminal();
-            plan::render(&report, &core_plan.pairs, color, *ddl)
+            plan::render(&report, pairs, hooks, color, *ddl)
         };
 
         match output_path {

@@ -1,17 +1,36 @@
 use super::fmt::filter_preview;
-use engine_core::plan::pair::{PairSide, PairSpec};
+use engine_core::plan::{
+    hook::HookSpec,
+    pair::{PairSide, PairSpec},
+};
 use engine_planner::plan::execution::migration_report::MigrationReport;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-/// `plan --json`: the planner's report, with the config's `pair` blocks next to it.
+/// `plan --json`: the planner's report, with the config's `pair` and `hook`
+/// blocks next to it.
 #[derive(Serialize)]
 pub struct PlanJson<'a> {
-    /// `None` for a config with only pairs: there is nothing for apply to plan.
+    /// `None` for a config with only pairs and hooks: there is nothing for
+    /// apply to plan.
     #[serde(flatten)]
     pub report: Option<&'a MigrationReport>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub pairs: Vec<PairJson>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub hooks: Vec<HookJson>,
+}
+
+#[derive(Serialize)]
+pub struct HookJson {
+    pub name: String,
+    pub on: Vec<&'static str>,
+    pub target: Option<String>,
+    pub delivery: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unset: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -39,10 +58,28 @@ pub struct PairSideJson {
 }
 
 impl<'a> PlanJson<'a> {
-    pub fn new(report: Option<&'a MigrationReport>, pairs: &[PairSpec]) -> Self {
+    pub fn new(
+        report: Option<&'a MigrationReport>,
+        pairs: &[PairSpec],
+        hooks: &[HookSpec],
+    ) -> Self {
         Self {
             report,
             pairs: pairs.iter().map(PairJson::from).collect(),
+            hooks: hooks.iter().map(HookJson::from).collect(),
+        }
+    }
+}
+
+impl From<&HookSpec> for HookJson {
+    fn from(h: &HookSpec) -> Self {
+        Self {
+            name: h.name.clone(),
+            on: h.on.iter().map(|e| e.as_str()).collect(),
+            target: h.target.as_ref().map(ToString::to_string),
+            delivery: h.delivery.kind(),
+            host: h.delivery.host().map(str::to_string),
+            unset: h.delivery.unset().map(str::to_string),
         }
     }
 }

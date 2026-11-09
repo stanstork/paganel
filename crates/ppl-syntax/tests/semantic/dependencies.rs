@@ -62,6 +62,7 @@ fn test_circular_define_dependency() {
         span: s,
         plugins: vec![],
         pairs: vec![],
+        hooks: vec![],
     };
 
     let result = validate(&doc);
@@ -126,6 +127,7 @@ fn test_circular_pipeline_dependency() {
         span: s,
         plugins: vec![],
         pairs: vec![],
+        hooks: vec![],
     };
 
     let result = validate(&doc);

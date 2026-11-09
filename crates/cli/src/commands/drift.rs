@@ -3,16 +3,22 @@ use crate::{
     config,
     format::{DATE_FORMAT, commas},
 };
-use engine_core::plan::execution::ExecutionPlan;
+use engine_core::plan::{execution::ExecutionPlan, hook::HookSpec};
+use engine_infra::hooks::deliver;
 use engine_processing::EnvContext;
 use engine_verify::{
-    NoopProgress, VerifyOptions, VerifyState, discover_targets, error::VerifyError, run_drift,
+    NoopProgress, VerifyOptions, VerifyState, discover_targets,
+    error::VerifyError,
+    hooks::{drift_notifications, test_notification},
+    run_drift,
 };
-use model::integrity::{
-    drift::DriftRun,
-    import::IMPORT_PREFIX,
-    pair::PAIR_PREFIX,
-    report::{DivergenceReportKind, Recheck, ReportResult, TableReport},
+use futures_util::future::join_all;
+use model::{
+    hook::result::HookDeliveryResult,
+    integrity::{
+        drift::DriftRun,
+        report::{DivergenceReportKind, Recheck, ReportResult, TableReport},
+    },
 };
 use std::{sync::Arc, time::Duration};
 use tracing::info;
@@ -26,6 +32,11 @@ pub async fn execute(args: &DriftArgs, env: Arc<EnvContext>) -> Result<(), CliEr
     info!(config = %config_path, "checking for drift");
 
     let plan = config::load_plan(&config_path, false, env.clone()).await?;
+
+    if let Some(only) = &args.notify_test {
+        return notify_test(&plan, only).await;
+    }
+
     let options = VerifyOptions {
         allow_extra: args.allow_extra,
     };
@@ -33,7 +44,9 @@ pub async fn execute(args: &DriftArgs, env: Arc<EnvContext>) -> Result<(), CliEr
 
     loop {
         match drift_once(&plan, env.clone(), &state, &args.filters, options).await {
-            Ok(run) => {
+            Ok(mut run) => {
+                run.notifications = notify(&plan.hooks, &run).await;
+
                 if !args.json {
                     print_run(&run);
                 } else if args.watch {
@@ -104,6 +117,65 @@ async fn drift_once(
     Ok(run)
 }
 
+/// Post every hook `run` fires, all at once.
+async fn notify(hooks: &[HookSpec], run: &DriftRun) -> Vec<HookDeliveryResult> {
+    let sends = drift_notifications(run, hooks).into_iter().filter_map(|n| {
+        let hook = hooks.iter().find(|h| h.name == n.hook)?;
+        Some(async move { deliver(&hook.delivery, &n).await })
+    });
+
+    join_all(sends).await
+}
+
+/// `--notify-test [HOOK]`: a sample through every hook, or one, then exit.
+async fn notify_test(plan: &ExecutionPlan, only: &str) -> Result<(), CliError> {
+    let hooks: Vec<&HookSpec> = plan
+        .hooks
+        .iter()
+        .filter(|h| only.is_empty() || h.name == only)
+        .collect();
+    if hooks.is_empty() {
+        return Err(CliError::Config(match only {
+            "" => "the config has no hooks".to_string(),
+            name => format!("no hook named `{name}`"),
+        }));
+    }
+
+    let results = join_all(
+        hooks
+            .iter()
+            .map(|h| async move { deliver(&h.delivery, &test_notification(h)).await }),
+    )
+    .await;
+
+    for result in &results {
+        println!("{}", format_delivery(result));
+    }
+
+    match results.iter().filter(|r| !r.ok).count() {
+        0 => Ok(()),
+        failed => Err(CliError::UserMessage(format!(
+            "{failed} of {} hooks could not be delivered",
+            results.len()
+        ))),
+    }
+}
+
+fn format_delivery(r: &HookDeliveryResult) -> String {
+    let tries = |n: u32| format!("{n} attempt{}", if n == 1 { "" } else { "s" });
+
+    match (&r.error, r.status) {
+        (None, status) => format!(
+            "→ hook {} delivered ({}, {})",
+            r.hook,
+            status.unwrap_or_default(),
+            tries(r.attempts)
+        ),
+        (Some(e), _) if r.attempts == 0 => format!("✗ hook {} not sent: {e}", r.hook),
+        (Some(e), _) => format!("✗ hook {} failed: {e} after {}", r.hook, tries(r.attempts)),
+    }
+}
+
 /// Map a run's exit code onto the errors `main` turns into 3 and 4.
 fn exit_status(code: i32) -> Result<(), CliError> {
     match code {
@@ -122,12 +194,15 @@ fn print_run(run: &DriftRun) {
     for s in &run.skipped {
         println!("- {}: skipped, {}", s.name, s.reason);
     }
+    for result in &run.notifications {
+        println!("{}", format_delivery(result));
+    }
 
     println!("{}", tally(run));
 }
 
 fn format_table(t: &TableReport) -> String {
-    let name = display_name(t);
+    let name = t.display_name();
     let recheck = match &t.recheck {
         Some(Recheck::Done { settled }) if *settled > 0 => {
             format!(", {} settled after grace", commas(*settled))
@@ -178,16 +253,6 @@ fn format_table(t: &TableReport) -> String {
                 t.message.as_deref().unwrap_or("not compared")
             )
         }
-    }
-}
-
-fn display_name(t: &TableReport) -> String {
-    if let Some(name) = t.pipeline.strip_prefix(IMPORT_PREFIX) {
-        format!("import {name} ({})", t.table)
-    } else if let Some(name) = t.pipeline.strip_prefix(PAIR_PREFIX) {
-        format!("pair {name} ({})", t.table)
-    } else {
-        format!("{}/{}", t.pipeline, t.table)
     }
 }
 

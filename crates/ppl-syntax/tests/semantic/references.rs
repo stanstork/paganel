@@ -75,6 +75,7 @@ fn test_undefined_connection_reference() {
         span: span(1, 1),
         plugins: vec![],
         pairs: vec![],
+        hooks: vec![],
     };
 
     let result = validate(&doc);
@@ -118,6 +119,7 @@ fn test_undefined_pipeline_reference() {
         span: span(1, 1),
         plugins: vec![],
         pairs: vec![],
+        hooks: vec![],
     };
 
     let result = validate(&doc);
@@ -176,6 +178,7 @@ fn test_undefined_define_constant() {
         span: span(1, 1),
         plugins: vec![],
         pairs: vec![],
+        hooks: vec![],
     };
 
     let result = validate(&doc);
@@ -380,5 +383,45 @@ fn test_pair_checks_both_sides() {
     assert!(!result.warnings.iter().any(|w| matches!(
         &w.kind,
         ValidationIssueKind::UnusedConnection { name } if name == "app"
+    )));
+}
+
+#[test]
+fn test_hook_checks_its_values() {
+    let doc = parse(
+        r#"
+            define {
+                slack_url = "https://hooks.slack.com/services/T/B/x"
+            }
+            hook "alerts" {
+                on = ["drift.diverged"]
+                slack { url = define.slack_url }
+            }
+            hook "audit" {
+                on = [define.events]
+                webhook {
+                    url    = "https://audit.example.com"
+                    secret = define.missing_secret
+                }
+            }
+        "#,
+    )
+    .expect("parse ok");
+
+    let result = validate(&doc);
+    let undefined: Vec<&str> = result
+        .errors
+        .iter()
+        .filter_map(|e| match &e.kind {
+            ValidationIssueKind::UndefinedDefineConstant { name } => Some(name.as_str()),
+            _ => None,
+        })
+        .collect();
+    // Both the top-level attributes and the delivery block are walked.
+    assert_eq!(undefined, ["events", "missing_secret"]);
+    // `slack_url` is used by a hook, so it is not reported unused.
+    assert!(!result.warnings.iter().any(|w| matches!(
+        &w.kind,
+        ValidationIssueKind::UnusedDefineConstant { name } if name == "slack_url"
     )));
 }

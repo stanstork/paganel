@@ -2,8 +2,8 @@ use crate::{
     ast::{
         attribute::Attribute,
         block::{
-            ColumnMatch, ConnectionBlock, DefineBlock, ExecutionBlock, PairBlock, PairSideBlock,
-            PluginBlock,
+            ColumnMatch, ConnectionBlock, DefineBlock, ExecutionBlock, HookBlock, PairBlock,
+            PairSideBlock, PluginBlock,
         },
         doc::PplDocument,
         dotpath::DotPath,
@@ -57,6 +57,7 @@ fn build_document(mut pairs: Pairs<Rule>) -> BuildResult<PplDocument> {
     let mut pipelines = Vec::new();
     let mut plugins = Vec::new();
     let mut pairs = Vec::new();
+    let mut hooks = Vec::new();
 
     for pair in program.into_inner() {
         match pair.as_rule() {
@@ -78,6 +79,9 @@ fn build_document(mut pairs: Pairs<Rule>) -> BuildResult<PplDocument> {
             Rule::pair_block => {
                 pairs.push(build_pair_block(pair)?);
             }
+            Rule::hook_block => {
+                hooks.push(build_hook_block(pair)?);
+            }
             Rule::EOI => {}
             _ => {}
         }
@@ -90,6 +94,7 @@ fn build_document(mut pairs: Pairs<Rule>) -> BuildResult<PplDocument> {
         pipelines,
         plugins,
         pairs,
+        hooks,
         span,
     })
 }
@@ -293,6 +298,28 @@ fn build_pair_block(pair: Pair<Rule>) -> BuildResult<PairBlock> {
         attributes,
         sides,
         map,
+        span,
+    })
+}
+
+fn build_hook_block(pair: Pair<Rule>) -> BuildResult<HookBlock> {
+    let span = pair_to_span(&pair);
+    let mut name = String::new();
+    let mut attributes = Vec::new();
+    let mut nested_blocks = Vec::new();
+
+    for inner in pair.into_inner() {
+        match inner.as_rule() {
+            Rule::lit_string => name = parse_string_literal(inner.as_str()),
+            Rule::attribute => attributes.push(build_attribute(inner)?),
+            Rule::nested_block => nested_blocks.push(build_nested_block(inner)?),
+            _ => {}
+        }
+    }
+    Ok(HookBlock {
+        name,
+        attributes,
+        nested_blocks,
         span,
     })
 }

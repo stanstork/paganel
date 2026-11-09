@@ -7,6 +7,7 @@ macro_rules! verify_config {
 
 pub mod drift;
 pub mod extra;
+pub mod hooks;
 pub mod matches;
 pub mod pair;
 pub mod receipts;

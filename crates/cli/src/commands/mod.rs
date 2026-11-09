@@ -184,6 +184,16 @@ pub struct DriftArgs {
         requires = "watch"
     )]
     pub interval: Duration,
+
+    /// Send a sample through every hook, or only HOOK, and exit
+    #[arg(
+        long,
+        value_name = "HOOK",
+        num_args = 0..=1,
+        default_missing_value = "",
+        conflicts_with = "watch"
+    )]
+    pub notify_test: Option<String>,
 }
 
 #[derive(Subcommand)]
