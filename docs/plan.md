@@ -147,6 +147,31 @@ no bar - there's nothing to compare it against.
 Row counts are estimates when introspection can't get an exact figure; those are
 prefixed with `~`.
 
+### Pairs and hooks
+
+[`pair`](ppl-reference.md#pair) and [`hook`](ppl-reference.md#hook) blocks
+don't change what `apply` does; `pag drift` uses them. The plan lists them after
+the pipelines and counts them in the header line
+(`1 pipeline · 2 pairs · 2 hooks · 2 connections · …`):
+
+```
+PAIRS (SOURCE AND TARGET MUST HOLD THE SAME ROWS; CHECKED BY PAG DRIFT)
+  > orders              app.orders → dw.orders_raw
+    ├ source  where status = 'paid'
+    └ target  where state = 'PAID'
+
+HOOKS (POSTED AFTER EACH PAG DRIFT RUN)
+  > orders_alert        drift.diverged, drift.failed → pair.orders · slack (hooks.slack.com)
+  > audit               drift.completed → every target · webhook: expression evaluation error: Missing required environment variable: AUDIT_SECRET
+```
+
+- Each side's `where` is shown as it will be queried, cut at 60 characters.
+- A hook shows where it posts by host only, never the URL or the secret. A
+  setting that is not available (an `env(...)` not set) is shown in its place, in
+  yellow: the config still loads, but that hook will fail when drift sends it.
+- A config with only pairs and hooks has nothing for `apply` to plan, so `plan`
+  prints just these sections and connects to nothing.
+
 ---
 
 ## Flags
@@ -206,6 +231,42 @@ With `--sample`, each pipeline's `sample` object fills in: `enabled: true`, the
 chosen `sampling_method`, and a `rows` array where every row carries its `input`,
 transformed `output`, and validation `status`. That is the complete sampled data,
 without the 5-row / 6-column terminal cap.
+
+### Pairs and hooks in the report
+
+A config with `pair` or `hook` blocks adds two top-level arrays; without them
+the report is unchanged.
+
+```json
+{
+  "...": "the report as above",
+  "pairs": [
+    {
+      "name": "orders",
+      "source": { "connection": "app", "table": "orders", "where": "status = 'paid'" },
+      "target": { "connection": "dw", "table": "orders_raw", "ignore": ["_fivetran_synced"] },
+      "map": { "customer_id": "cust_id" },
+      "key": ["id"],
+      "grace_secs": 30
+    }
+  ],
+  "hooks": [
+    {
+      "name": "audit",
+      "on": ["drift.completed"],
+      "target": null,
+      "delivery": "webhook",
+      "host": "audit.example.com",
+      "unset": "expression evaluation error: Missing required environment variable: AUDIT_SECRET"
+    }
+  ]
+}
+```
+
+`map`, `key`, `where` and `ignore` are left out when not set. A hook carries
+`host` (where it posts) and, when a URL or secret is not available, `unset`
+saying why; never the URL or the secret. For a
+config with only pairs and hooks, the report is just these two arrays.
 
 ---
 

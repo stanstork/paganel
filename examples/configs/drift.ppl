@@ -1,0 +1,80 @@
+// drift-checks.ppl - checking tables after the migration
+//
+// `pag drift` re-checks tables on demand or on an interval and names the rows
+// that changed. One run checks three kinds of target:
+//
+//   - pipeline receipts, written by `apply --integrity`
+//   - pairs: a live source and target, compared with each other
+//   - imports: baselines of tables Paganel never migrated
+//
+// Workflow:
+//
+//   1. Migrate with receipts:
+//        pag apply -c drift-checks.ppl --integrity -e .env
+//
+//   2. Optionally, take a baseline of a table Paganel did not migrate:
+//        pag state import -c drift-checks.ppl --connection dst --table <table> -e .env
+//
+//   3. Check once, or keep checking:
+//        pag drift -c drift-checks.ppl -e .env
+//        pag drift -c drift-checks.ppl -e .env --watch --interval 1h
+//
+//   4. Try the hooks without waiting for drift (sends a sample to each):
+//        pag drift -c drift-checks.ppl -e .env --notify-test
+//
+// Exit codes: 0 everything matched, 3 a table differs, 4 a table could not
+// be checked. Full reference: docs/drift.md.
+
+define {
+    mysql_url    = env("MYSQL_URL")
+    postgres_url = env("POSTGRES_URL")
+}
+
+connection "src" { driver = "mysql"    url = define.mysql_url    }
+connection "dst" { driver = "postgres" url = define.postgres_url }
+
+// Migrated with --integrity, so drift re-checks the destination against the
+// receipt: any write to dst.actor after the migration is reported.
+pipeline "migrate_actor" {
+    from { connection = connection.src  table = "actor" }
+    to   { connection = connection.dst  table = "actor" }
+
+    settings {
+        create_missing_tables = true
+    }
+}
+
+// The same two tables compared live. Drift reads both sides, so a change
+// made to the source and copied to the target is not drift; a target that
+// stops matching the source is. MySQL and PostgreSQL types are compared
+// through one canonical encoding, so TINYINT(1) and BOOLEAN match.
+pair "actor_live" {
+    source { connection = connection.src  table = "actor" }
+    target { connection = connection.dst  table = "actor" }
+
+    // Rows still being copied when drift reads them get this long to catch up
+    // before they are reported. Use "0s" when nothing writes to either side.
+    grace = "30s"
+}
+
+// A Slack message when the pair differs or can't be checked. An unset
+// SLACK_WEBHOOK_URL only fails this hook when it is sent; apply still runs.
+hook "actor_alert" {
+    on     = ["drift.diverged", "drift.failed"]
+    target = pair.actor_live
+
+    slack {
+        url = env("SLACK_WEBHOOK_URL")
+    }
+}
+
+// A signed JSON report after every run, for an audit log or a dashboard.
+// Verify X-Paganel-Signature on the receiving side (docs/drift.md#webhook).
+hook "audit" {
+    on = ["drift.completed"]
+
+    webhook {
+        url    = env("DRIFT_WEBHOOK_URL")
+        secret = env("DRIFT_WEBHOOK_SECRET")
+    }
+}

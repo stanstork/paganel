@@ -11,6 +11,8 @@ PPL (Paganel Pipeline Language) is a declarative, SQL-inspired language for defi
   - [execution](#execution)
   - [plugin](#plugin)
   - [pipeline](#pipeline)
+  - [pair](#pair)
+  - [hook](#hook)
 - [Pipeline Blocks](#pipeline-blocks)
   - [from](#from)
   - [to](#to)
@@ -214,6 +216,106 @@ pipeline "pipeline_name" {
 ```
 
 The `after` field declares dependencies, creating a DAG. All listed pipelines must complete before this one starts. Pipelines without dependencies run in parallel.
+
+---
+
+### pair
+
+Two live tables that should hold the same rows, checked by `pag drift`. `apply`
+ignores pairs. Use one for a copy another tool keeps in sync; what drift does
+with it is in [drift.md](drift.md#pairs).
+
+```ppl
+pair "orders" {
+  source {
+    connection = connection.app
+    table      = "orders"
+    where      { status == "paid" }       // optional, this side's own columns
+  }
+
+  target {
+    connection = connection.warehouse
+    table      = "orders_raw"
+    where      { state == "PAID" }
+    ignore     = ["_fivetran_synced"]     // optional, left out of the comparison
+  }
+
+  map {                                   // optional, columns named differently
+    source.customer_id = target.cust_id
+  }
+
+  key   = ["id"]                          // optional, see below
+  grace = "30s"                           // optional, default 30s; "0s" disables the re-check
+}
+```
+
+**`source` / `target`** - both required, each with:
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `connection` | yes | `connection.<name>`. Both sides may use the same connection. |
+| `table` | yes | The table on that side. |
+| `where { ... }` | no | Rows of this side to compare. Columns are this side's own names, bare (`status`) or qualified with its table (`orders.status`). Comparisons, `and`/`or`, grouping and `is [not] null`; no function calls. |
+| `ignore` | no | Columns of this side left out of the comparison. A column both sides have must be ignored on both or neither. |
+
+**Top level:**
+
+| Attribute | Description |
+| --- | --- |
+| `map { source.a = target.b }` | Pairs two columns named differently. Either order; one line per column. It renames only; values are not converted. |
+| `key` | The columns that identify a row, when neither table's primary key fits. A bare name is the same on both sides; write `source.x` or `target.y` for a column `map` renames. Default: the target's primary key, else the source's. |
+| `grace` | How long to wait before re-reading the keys that differ, so rows still being copied are not reported. A duration such as `"30s"`, `"5m"`. |
+
+Every column must be accounted for: compared on both sides (by name, case-insensitive, or through `map`) or ignored. A column only one side has fails the pair with the names to add to `ignore` or `map`.
+
+A pair's name must be unique and can't be a pipeline's name: `--filters` selects by it, and it is reported as `pair <name>`.
+
+---
+
+### hook
+
+Posts the outcome of each `pag drift` run to Slack or to an HTTP endpoint.
+Delivery, payloads and signature verification are in
+[drift.md](drift.md#hooks).
+
+```ppl
+hook "orders_alert" {
+  on     = ["drift.diverged", "drift.failed"]
+  target = pair.orders                    // optional
+
+  slack {
+    url = env("ORDERS_SLACK_URL")
+  }
+}
+
+hook "audit" {
+  on = ["drift.completed"]
+
+  webhook {
+    url    = env("AUDIT_URL")
+    secret = env("AUDIT_SECRET")
+  }
+}
+```
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `on` | yes | List of events: `"drift.completed"` (every run), `"drift.diverged"` (a watched table mismatched), `"drift.failed"` (a watched table could not be compared). `apply.*` and `verify.*` names are reserved and refused for now. |
+| `target` | no | One block the hook watches: `pipeline.<name>` or `pair.<name>`. Without it, the hook watches every table in the run. |
+
+Exactly one delivery block:
+
+| Block | Attributes | Sends |
+| --- | --- | --- |
+| `slack { }` | `url` (required) | Plain-text message to a Slack incoming webhook. Unsigned. |
+| `webhook { }` | `url`, `secret` (both required) | JSON envelope signed with HMAC-SHA256 (`X-Paganel-Signature`). |
+
+Other attributes or blocks are errors (`secret` inside `slack`, an `email { }`
+block). Hook names must be unique among hooks.
+
+A value that comes from an `env(...)` that is not set doesn't stop the config
+from loading: `pag plan` flags it and only that hook fails when it is sent.
+Adding a hook doesn't change the config's `run_id`.
 
 ---
 

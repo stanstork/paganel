@@ -13,7 +13,7 @@
 <h1 align="center">Paganel</h1>
 
 <p align="center">
-  <strong>Data migration that proves it worked.</strong>
+  <strong>Copies your tables between systems, and tells you row by row if a copy ever stops matching.</strong>
 </p>
 
 <p align="center">
@@ -29,6 +29,8 @@
 <!-- demo.gif is rendered from assets/demo.tape; regenerate with `vhs assets/demo.tape` (needs the quickstart DBs up and a release build). -->
 
 Paganel is a data migration engine written in Rust. It moves data and schema between systems with crash recovery, parallel execution, and in-flight transforms, then cryptographically verifies that the destination matches what was written, down to the row. Today that means MySQL, PostgreSQL, and CSV; sources and sinks can also be sandboxed WASM plugins, so anything with data can stand at either end of a pipeline.
+
+Website and blog: [paganel-dev.github.io](https://paganel-dev.github.io/)
 
 A complete migration is one file:
 
@@ -78,6 +80,9 @@ arrived intact. Paganel is one declarative tool that:
   minutes or weeks later by re-reading the destination and checking it
   against the receipt. No source connection, and a 32-byte root per table you
   can keep in a ticket. A mismatch names the row, not just a count.
+- **Keeps checking.** `pag drift` re-checks receipts on a schedule, compares a
+  live source with the copy another tool keeps in sync, and posts what changed to
+  Slack or a signed webhook ([drift detection](docs/drift.md)).
 - **Migrates schema too.** Tables, indexes, foreign keys, ENUMs, and
   sequences, with FK-aware ordering and dependency-graph discovery.
 - **Expands the graph, not just a table.** Point at a root table and the FK
@@ -103,6 +108,8 @@ mapping, dependency ordering, resumability, or verification.
 
 - **Declarative pipelines** - PPL with SQL-inspired syntax
 - **Cryptographic verification** - Merkle tree receipts detect any difference between the destination and what was written
+- **Drift detection** - `pag drift` re-checks receipts, imported baselines (`pag state import`) and live source/target `pair`s, once or on an interval, naming the rows that changed
+- **Notifications** - `hook` blocks post drift results to Slack or an HMAC-signed webhook
 - **Dry run** - `plan` shows output columns and types, the execution DAG, the exact DDL (`--ddl`), and duration/memory estimates
 - **Schema migration** - CREATE TABLE, indexes, foreign keys, ENUMs, sequences
 - **Graph expansion** - auto-discover and migrate FK-dependent tables
@@ -193,14 +200,17 @@ non-critical workloads; don't leave it unattended in production yet.
   not implemented.
 - **Single-node:** execution and state (SQLite) are local to one machine; there is
   no distributed/coordinated mode.
-- **One run per config at a time:** `apply`, `resume` and `verify` lock the
-  config's run, so a second one of the same config is refused while the first
+- **One run per config at a time:** `apply`, `resume`, `verify` and `drift` lock
+  the config's run, so a second one of the same config is refused while the first
   runs. Different configs don't block each other, and `status`, `receipt` and
   `pause` work during a run.
 - **Plugin host functions** (outbound HTTP, key-value, metrics) are
   capability-gated and off by default. Outbound HTTP is guarded (link-local/
   cloud-metadata blocked, per-request timeout, response-size cap, optional host
   allowlist); the key-value store is instance-scoped scratch, not persisted.
+- **Drift reads in full:** every `pag drift` run re-reads each table it checks;
+  there is no incremental or CDC-based mode yet. See
+  [docs/drift.md](docs/drift.md#limitations) for the rest.
 - **Pre-1.0 versioning**: the PPL language and internal APIs still change
   between releases, so pin the version you tested against.
 
@@ -311,6 +321,18 @@ pag verify -c migration.ppl --output report.txt
 # Print the stored receipts (full table roots) to record outside the state dir
 pag receipt -c migration.ppl          # add --json for machine-readable output
 
+# Re-check receipts, imports and pairs; once, or every 15 minutes
+pag drift -c migration.ppl
+pag drift -c migration.ppl --watch --interval 15m
+
+# Take a baseline of a table Paganel did not migrate, for drift to check
+pag state import -c migration.ppl --connection dst --table legacy_events
+pag state list
+pag state rm legacy_events
+
+# Send a sample through every hook (Slack / webhook) without checking anything
+pag drift -c migration.ppl --notify-test
+
 # Test database connectivity (--format mysql|postgres if the URL scheme is ambiguous)
 pag ping --url mysql://user:pass@localhost:3306/db
 
@@ -324,7 +346,7 @@ pag reset  -c migration.ppl   # clear all state for a migration (--force skips t
 pag plugin --help
 ```
 
-> **One run per config.** `pag apply`, `resume` and `verify` lock the config's
+> **One run per config.** `pag apply`, `resume`, `verify` and `drift` lock the config's
 > run (a file in `~/.paganel/state/locks/`), so while one runs, a second of the
 > same config fails with a clear message. The state store is SQLite in WAL mode,
 > so other commands can read it during a run: `pag status` shows the live
@@ -560,7 +582,7 @@ If a pipeline fails, the run is recorded as failed rather than completed, and re
 | [docs/output-modes.md](docs/output-modes.md) | `apply` / `verify` / `receipt` output - default logs, `--pretty`, the `--tui` dashboard, receipt text and JSON |
 | [docs/comparison.md](docs/comparison.md) | How Paganel compares with other migration, CDC, and verification tools |
 | [docs/benchmarks.md](docs/benchmarks.md) | Reproducible Paganel benchmark (optional pgloader comparison) - methodology, results, `./benchmarks/run.sh` |
-| [examples/configs/](examples/configs/) | Runnable PPL examples - schema mapping, DAG dependencies, validation, DLQ, and [`when.ppl`](examples/configs/when.ppl) (conditional values & computed-column chains) |
+| [examples/configs/](examples/configs/) | Runnable PPL examples - schema mapping, DAG dependencies, validation, DLQ, [`when.ppl`](examples/configs/when.ppl) (conditional values & computed-column chains), and [`drift-checks.ppl`](examples/configs/drift-checks.ppl) (drift, a pair and hooks) |
 
 ## Development
 
@@ -598,14 +620,15 @@ Rough direction, no dates and no commitments:
 
 **Keeping data in sync**
 
-- Incremental catch-up after a snapshot, so a cutover only has to freeze the delta
-- Change-data-capture: MySQL binlog first, then PostgreSQL logical replication
-- `drift` - re-verify a destination on a schedule and fail when it diverges
+- Incremental verification, so drift doesn't re-read whole tables
+- Faster pair comparison, re-reading only the parts that differ
+- Repair: re-copy only the rows that differ
+- Change-data-capture, PostgreSQL first
+- Schema changes on the source handled during sync
+- Cutover gated on verification
 
 **Making the proof stronger**
 
-- Source-side checksums, so a receipt can attest that the destination matches the
-  *source* for directly mapped columns, not only what was written
 - The receipt format published as a spec, with an independent validator that
   checks a receipt on a machine without Paganel, and signed receipts
 - Verification strategies declared per pipeline: full Merkle, row count, or
@@ -620,6 +643,7 @@ Rough direction, no dates and no commitments:
 - Shared state with locking, so runs can be concurrent and a team can share one
   migration's state
 - Metrics export (OTLP push, Prometheus pull)
+- A read-only MCP server for agents
 - More connectors and destinations, including an analytical one
 - PPL and API stabilization toward 1.0
 
