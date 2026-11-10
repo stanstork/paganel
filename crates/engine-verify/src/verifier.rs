@@ -3,7 +3,7 @@ use crate::{
     error::VerifyError,
     progress::{NoopProgress, VerifyProgress},
     state::VerifyState,
-    table::{HashSink, HashSpec, fetch_table_metadata, hash_table},
+    table::{HashSink, HashSpec, fetch_existing_table, hash_table},
 };
 use connectors::{sql::metadata::table::TableMetadata, traits::introspector::SchemaIntrospector};
 use engine_core::{
@@ -163,7 +163,7 @@ pub(crate) async fn verify_table(
 ) -> Result<VerificationResult, VerifyError> {
     let start = Instant::now();
 
-    let meta = fetch_table_metadata(driver, table).await?;
+    let meta = fetch_existing_table(driver, table).await?;
     let sink = HashSink {
         log: hash_log,
         scope: RowHashScope::Verify,

@@ -20,8 +20,9 @@ mod tests {
     /// Drift checks the pipeline's receipt and an import of the same table:
     /// one hand edit shows up in both, naming the row. An import whose
     /// connection the config lacks is skipped, and while an apply holds the
-    /// config's lock, pipelines are skipped but imports are still checked.
-    /// Another store writing to the same file does not block the run.
+    /// config's lock, drift refuses to run at all. Importing a table that
+    /// does not exist names it. Another store writing to the same file does
+    /// not block the run.
     #[traced_test]
     #[tokio::test(flavor = "multi_thread")]
     async fn drift_reports_a_hand_edit_in_pipelines_and_imports() {
@@ -58,6 +59,17 @@ mod tests {
         import_table(&driver, &req, &state, &mut NoopProgress)
             .await
             .expect("import");
+
+        // A missing table is named.
+        let missing = ImportRequest {
+            name: "missing".into(),
+            table: "no_such_table".into(),
+            ..req.clone()
+        };
+        let err = import_table(&driver, &missing, &state, &mut NoopProgress)
+            .await
+            .expect_err("no table to import");
+        assert_eq!(err.to_string(), "table 'no_such_table' not found");
 
         // An import made against a config this one does not share.
         req.name = "elsewhere".into();
@@ -131,9 +143,9 @@ mod tests {
                 .is_err()
         );
 
-        // While an apply of this config runs, its pipelines are skipped.
+        // While an apply of this config runs, drift checks nothing.
         let lock = RunLock::acquire(state.store.dir(), &plan.run_id()).expect("lock");
-        let run = run_drift(
+        let err = run_drift(
             &plan,
             env,
             &state,
@@ -142,12 +154,9 @@ mod tests {
             VerifyOptions::default(),
         )
         .await
-        .expect("drift");
+        .expect_err("the config is being applied");
         drop(lock);
-
-        assert_eq!(run.tables.len(), 1);
-        assert_eq!(run.tables[0].pipeline, "@import/actor_dst");
-        assert_eq!(run.skipped[0].name, pipeline.name);
+        assert!(err.to_string().contains("already running"), "{err}");
 
         for name in ["actor_dst", "elsewhere"] {
             state.store.delete_import(name).await.expect("delete");

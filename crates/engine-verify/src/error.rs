@@ -17,6 +17,9 @@ pub enum VerifyError {
     #[error("table '{0}' has no primary key; pass --key with the columns that identify a row")]
     NoKey(String),
 
+    #[error("table '{0}' not found")]
+    TableNotFound(String),
+
     #[error("No integrity receipts found — run `apply --integrity` first")]
     NoReceipts,
 
