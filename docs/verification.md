@@ -580,6 +580,14 @@ is not optional.
 
 Verification does not depend on reproducing the migration's read order, so a `paginate` block is not needed for correct results. It is a good idea for large tables (keyset pagination avoids deep `OFFSET` scans), but its absence can't cause a false mismatch.
 
+### Checking again later
+
+`verify` is a one-off check. To keep checking the same receipts on a schedule,
+cover tables Paganel never migrated (`pag state import`), compare a live source
+with its copy (`pair` blocks), or get the result in Slack or a webhook, use
+`pag drift` ([drift.md](drift.md)). It uses the same receipts, row hashing and
+exit codes.
+
 ---
 
 ## Cascade, Lanes, and Retries

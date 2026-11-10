@@ -4,6 +4,9 @@ How `pag apply`, `pag verify`, and `pag receipt` report progress and results in 
 terminal, and how to pick the mode that fits your context (CI, an interactive
 terminal, or a live migration you want to watch).
 
+`pag drift` prints the same `✓`/`✗`/`?` result lines and uses the same exit
+codes; its output, `--json` shape and hook lines are in [drift.md](drift.md#output).
+
 ---
 
 ## Table of Contents
@@ -349,6 +352,9 @@ A mismatch expands to the divergences (missing / changed / extra), capped with a
 | 4 | Nothing mismatched, but at least one table was inconclusive (its row-hash log is missing or truncated). |
 
 A mismatch outranks inconclusive: a run with both exits 3.
+
+`pag drift` uses the same codes. It also counts a table it could not read at all
+(gone, or its connection refused) as inconclusive, 4.
 
 ### `--pretty` output
 

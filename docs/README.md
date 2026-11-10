@@ -12,6 +12,7 @@ the [project README](../README.md).
 | [plan.md](plan.md) | Reading `pag plan` - the summary layout, flags, sampling, and the magnitude bar |
 | [output-modes.md](output-modes.md) | `apply`, `verify` and `receipt` output - default logs, `--pretty`, the `--tui` dashboard with its controls, and receipt text/JSON |
 | [ppl-reference.md](ppl-reference.md) | PPL language reference with examples |
+| [drift.md](drift.md) | `pag drift`, `pag state import`, `pair` blocks and `hook` notifications - checking tables after the migration, and the limits of each |
 
 ## Design
 

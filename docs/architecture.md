@@ -29,9 +29,9 @@ graph TB
 | `ppl-syntax` | Language | PPL parser -> AST (pest-based) |
 | `expression-engine` | Language | Expression evaluation (filters, computed columns, functions) |
 | `query-builder` | Language | SQL AST + dialect-aware rendering |
-| `connectors` | Data Access | MySQL, PostgreSQL, CSV drivers; unified `Driver` trait hierarchy |
-| `engine-state` | Infrastructure | SQLite state store (`state.db`, WAL mode) - checkpoints, WAL, run state, integrity receipts, run locks; plus the append-and-sort log holding per-row integrity hashes |
-| `engine-infra` | Infrastructure | EventBus, Metrics, Progress, Retry utilities |
+| `connectors` | Data Access | MySQL, PostgreSQL, CSV drivers; unified `Driver` trait hierarchy; `where` compilers (SQL and CSV) |
+| `engine-state` | Infrastructure | SQLite state store (`state.db`, WAL mode) - checkpoints, WAL, run state, integrity receipts, imports, drift history, run locks; plus the append-and-sort log holding per-row integrity hashes |
+| `engine-infra` | Infrastructure | EventBus, Metrics, Progress, Retry utilities; hook delivery (Slack, signed webhooks) |
 | `engine-schema` | Schema | Type system, DDL generation, FK dependency graph, schema planning |
 | `engine-core` | Core Services | ExecutionContext, DriverRef, plan builder |
 | `engine-config` | Config | PPL -> validated settings, connection resolution |
@@ -39,8 +39,8 @@ graph TB
 | `engine-wasm` | Execution | WASM plugin host: registry, wasmtime runtime, resource limits, host<->guest wire |
 | `engine-processing` | Execution | Producer-consumer pipeline, transforms, Source/Sink/Destination abstractions |
 | `engine-runtime` | Execution | DAG orchestrator, PipelineOrchestrator, actor coordination |
-| `engine-verify` | Verification | Re-reads the destination and diffs it against the migration's Merkle receipt |
-| `cli` | Interface | Commands (plan, apply, verify, ping), TUI, signal handling |
+| `engine-verify` | Verification | Re-reads the destination and diffs it against the migration's Merkle receipt; imports, `pair` diffs and drift runs; which hooks a drift run fires |
+| `cli` | Interface | Commands (plan, apply, verify, drift, state, ping, ...), TUI, signal handling |
 | `engine-tests` | Testing | Integration test suite (MySQL ↔ PostgreSQL, Sakila database) |
 | `sdk/paganel-plugin-compiler` | Tooling | Compiles plugin sources to WASM modules for `pag plugin` |
 
@@ -166,7 +166,7 @@ Sink (BatchWriter)
 | `io/sink/` | `Sink` trait with `write_batch()`; `PostgresSink` uses COPY, `MySqlSink` uses LOAD DATA, `WasmSinkAdapter` hands batches to a plugin |
 | `io/destination.rs` | `Destination` wraps typed `Arc<PgDriver>` or future driver types |
 | `io/driver.rs` | `SchemaDriver` trait alias used by planner analyzers |
-| `io/filter/` | `FilterCompiler` trait; `SqlFilterCompiler` emits WHERE clauses |
+| `io/filter.rs` | The `Filter` a source applies, compiled for SQL or CSV, and `combine_filters` for several `where` blocks. The compilers themselves live in `connectors` (`sql::filter::compile`, `drivers::csv::compile`), where `pag drift` reuses them for `pair` filters |
 | `io/format.rs` | `DataFormat` enum (MySql, Postgres, Csv) |
 | `io/linked.rs` | `LinkedSource` for JOIN-resolved related tables |
 
@@ -295,9 +295,9 @@ no longer re-exports the infrastructure crates under aliases.
 
 #### StateStore (`engine-state/store`)
 SQLite database at `~/.paganel/state/state.db`, in WAL mode:
-- `StateStore` - one concrete type over tables `runs`, `checkpoints`, `wal` and
-  `receipts`; the schema is versioned with `PRAGMA user_version` migrations
-  (`store/migrations/`)
+- `StateStore` - one concrete type over tables `runs`, `checkpoints`, `wal`,
+  `receipts`, `imports` and `drift_runs`; the schema is versioned with
+  `PRAGMA user_version` migrations (`store/migrations/`)
 - Checkpoint stores: cursor position, row counts, timestamps
 - Resume: on restart, load checkpoint and skip processed rows
 - `WalEntry` model for the run's write-ahead log (the `wal` table, not SQLite's
@@ -306,8 +306,11 @@ SQLite database at `~/.paganel/state/state.db`, in WAL mode:
 - Integrity receipts, one per pipeline and table
 - SQLite calls run on `spawn_blocking`, and a background thread checkpoints
   SQLite's WAL journal every second, so no batch write pays for it
+- Imports (`pag state import`) are stored as receipts under `@import/{name}`,
+  next to a record of where they came from; drift history keeps the newest 100
+  runs per config
 - `RunLock` - a per-run file lock at `~/.paganel/state/locks/{run_id}.lock`,
-  held by `apply`, `resume` and `verify`; the OS releases it on any exit
+  held by `apply`, `resume`, `verify` and `drift`; the OS releases it on any exit
 
 #### RowHashLog (`engine-state/log`)
 A peer of the store, not part of it, at `~/.paganel/state/rowhash/`. Per-row
@@ -338,7 +341,15 @@ Atomic counters per pipeline:
 - `failure_count`, `retry_count`
 
 #### Retry (`engine-infra/retry.rs`)
-Configurable retry policy with exponential backoff, used by circuit breaker.
+Configurable retry policy with exponential backoff, used by circuit breaker and
+hook delivery.
+
+#### Hooks (`engine-infra/hooks/`)
+Posts a `hook` block's notification: Slack text, or a JSON envelope signed with
+HMAC-SHA256 over timestamp and body. The sender doesn't know which command fired
+the hook: `engine-verify` decides which hooks a drift run fires and renders their
+bodies, and the sender delivers them (3 attempts; a failure never fails the
+run). See [drift.md](drift.md#hooks).
 
 #### Shutdown (`engine-infra/shutdown.rs`)
 `ShutdownSignal` is the cancellation token pair the CLI drives from SIGINT/SIGTERM
