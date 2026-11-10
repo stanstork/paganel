@@ -70,7 +70,7 @@ pag drift -c migration.ppl --watch --interval 15m
 ```
 
 A complete, commented config with a receipt, a pair and two hooks is in
-[`examples/configs/drift-checks.ppl`](../examples/configs/drift-checks.ppl).
+[`examples/configs/drift.ppl`](../examples/configs/drift.ppl).
 A pair needs only the block in the config:
 
 ```ppl

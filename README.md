@@ -582,7 +582,7 @@ If a pipeline fails, the run is recorded as failed rather than completed, and re
 | [docs/output-modes.md](docs/output-modes.md) | `apply` / `verify` / `receipt` output - default logs, `--pretty`, the `--tui` dashboard, receipt text and JSON |
 | [docs/comparison.md](docs/comparison.md) | How Paganel compares with other migration, CDC, and verification tools |
 | [docs/benchmarks.md](docs/benchmarks.md) | Reproducible Paganel benchmark (optional pgloader comparison) - methodology, results, `./benchmarks/run.sh` |
-| [examples/configs/](examples/configs/) | Runnable PPL examples - schema mapping, DAG dependencies, validation, DLQ, [`when.ppl`](examples/configs/when.ppl) (conditional values & computed-column chains), and [`drift-checks.ppl`](examples/configs/drift-checks.ppl) (drift, a pair and hooks) |
+| [examples/configs/](examples/configs/) | Runnable PPL examples - schema mapping, DAG dependencies, validation, DLQ, [`when.ppl`](examples/configs/when.ppl) (conditional values & computed-column chains), and [`drift.ppl`](examples/configs/drift.ppl) (drift, a pair and hooks) |
 
 ## Development
 

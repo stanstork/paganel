@@ -1,4 +1,4 @@
-// drift-checks.ppl - checking tables after the migration
+// drift.ppl - checking tables after the migration
 //
 // `pag drift` re-checks tables on demand or on an interval and names the rows
 // that changed. One run checks three kinds of target:
@@ -10,17 +10,17 @@
 // Workflow:
 //
 //   1. Migrate with receipts:
-//        pag apply -c drift-checks.ppl --integrity -e .env
+//        pag apply -c drift.ppl --integrity -e .env
 //
 //   2. Optionally, take a baseline of a table Paganel did not migrate:
-//        pag state import -c drift-checks.ppl --connection dst --table <table> -e .env
+//        pag state import -c drift.ppl --connection dst --table <table> -e .env
 //
 //   3. Check once, or keep checking:
-//        pag drift -c drift-checks.ppl -e .env
-//        pag drift -c drift-checks.ppl -e .env --watch --interval 1h
+//        pag drift -c drift.ppl -e .env
+//        pag drift -c drift.ppl -e .env --watch --interval 1h
 //
 //   4. Try the hooks without waiting for drift (sends a sample to each):
-//        pag drift -c drift-checks.ppl -e .env --notify-test
+//        pag drift -c drift.ppl -e .env --notify-test
 //
 // Exit codes: 0 everything matched, 3 a table differs, 4 a table could not
 // be checked. Full reference: docs/drift.md.
