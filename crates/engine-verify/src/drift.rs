@@ -8,7 +8,6 @@ use chrono::Utc;
 use engine_core::{
     context::{env::EnvContext, exec::ExecutionContext},
     drivers::DriverRef,
-    error::StateStoreError,
     plan::{execution::ExecutionPlan, pair::PairSpec},
 };
 use engine_state::RunLock;
@@ -119,31 +118,13 @@ pub async fn run_drift(
         notifications: Vec::new(),
     };
 
-    let has_pipelines = targets
-        .iter()
-        .any(|t| matches!(t, DriftTarget::Pipeline(_)));
-
-    let lock = if has_pipelines {
-        match RunLock::acquire(state.store.dir(), &plan.run_id()) {
-            Ok(lock) => Some(lock),
-            Err(StateStoreError::RunLocked { .. }) => None,
-            Err(e) => return Err(e.into()),
-        }
-    } else {
-        None
-    };
-
-    let pipelines_locked = has_pipelines && lock.is_none();
+    // Nothing is checked while an apply, resume or verify of
+    // this config holds its lock, since its tables are still being written.
+    let _run_lock = RunLock::acquire(state.store.dir(), &plan.run_id())?;
     let exec_ctx = ExecutionContext::new(plan, state.store.clone(), state.hash_log.clone(), env);
 
     for target in targets {
         match target {
-            DriftTarget::Pipeline(p) if pipelines_locked => {
-                run.skipped.push(Skipped {
-                    name: p.name.clone(),
-                    reason: "an apply, resume or verify of this config is running".into(),
-                });
-            }
             DriftTarget::Pipeline(p) => {
                 check_pipeline(p, &exec_ctx, state, progress, options, &mut run).await?;
             }

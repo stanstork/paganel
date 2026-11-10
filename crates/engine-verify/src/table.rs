@@ -56,7 +56,7 @@ pub async fn spec_from_table(
     key_override: Option<&[String]>,
     ignore: &[String],
 ) -> Result<(HashSpec, TableMetadata), VerifyError> {
-    let meta = fetch_table_metadata(driver, table).await?;
+    let meta = fetch_existing_table(driver, table).await?;
     let spec = build_spec(&meta, key_override, ignore)?;
     Ok((spec, meta))
 }
@@ -158,6 +158,17 @@ pub(crate) async fn hash_rows_where(
     .await?;
 
     Ok(hashes)
+}
+
+pub(crate) async fn fetch_existing_table(
+    driver: &DriverRef,
+    table: &str,
+) -> Result<TableMetadata, VerifyError> {
+    let meta = fetch_table_metadata(driver, table).await?;
+    if meta.columns.is_empty() {
+        return Err(VerifyError::TableNotFound(table.to_string()));
+    }
+    Ok(meta)
 }
 
 pub(crate) async fn fetch_table_metadata(
