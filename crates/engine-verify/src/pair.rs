@@ -3,7 +3,7 @@ use crate::{
     diff::MAX_RECHECK_KEYS,
     diff_keyed_sets,
     error::VerifyError,
-    hash_table,
+    hash_table, profile,
     table::{fetch_table_metadata, hash_rows_where},
 };
 use connectors::sql::{filter::SqlFilter, metadata::table::TableMetadata};
@@ -114,7 +114,16 @@ pub async fn diff_pair(
             info!(pair = %spec.name, keys = differing, grace = ?spec.grace, "re-checking differing keys after grace");
             tokio::time::sleep(spec.grace).await;
 
-            match sides.recheck(&outcome.divergent_keys).await? {
+            let reread = Instant::now();
+            let rechecked = sides.recheck(&outcome.divergent_keys).await?;
+            profile::log_recheck(
+                &spec.name,
+                outcome.divergent_keys.len(),
+                spec.grace,
+                reread.elapsed(),
+            );
+
+            match rechecked {
                 Some(rechecked) => rechecked.apply(&mut report),
                 None => Recheck::Skipped {
                     reason: "only integer, text and UUID keys can be re-read".into(),
@@ -332,6 +341,7 @@ impl Sides<'_> {
         let target_sink = make_sink(RowHashScope::Verify);
 
         progress.table_phase("reading both tables");
+        let read = Instant::now();
         let (source_rows, target_rows) = both(
             self.shared,
             hash_table(
@@ -354,10 +364,13 @@ impl Sides<'_> {
             .instrument(info_span!("pair", side = %"target")),
         )
         .await?;
+        let read = read.elapsed();
 
         progress.table_phase("sorting row hashes");
+        let sort = Instant::now();
         hash_log.seal(RowHashScope::Source, pipeline, table)?;
         hash_log.seal(RowHashScope::Verify, pipeline, table)?;
+        let sort = sort.elapsed();
 
         let expected = hash_log.stream(RowHashScope::Source, pipeline, table)?;
         let actual = hash_log.stream(RowHashScope::Verify, pipeline, table)?;
@@ -369,7 +382,8 @@ impl Sides<'_> {
         };
 
         progress.table_phase("comparing");
-        tokio::task::spawn_blocking(move || {
+        let diff = Instant::now();
+        let outcome = tokio::task::spawn_blocking(move || {
             diff_keyed_sets(
                 expected,
                 actual,
@@ -379,7 +393,10 @@ impl Sides<'_> {
             )
         })
         .await
-        .map_err(|e| VerifyError::InitializationError(format!("pair task failed: {e}")))?
+        .map_err(|e| VerifyError::InitializationError(format!("pair task failed: {e}")))?;
+
+        profile::log_pair(&self.spec.name, read, sort, diff.elapsed());
+        outcome
     }
 
     /// Re-read `keys` from both sides and diff them again.

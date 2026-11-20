@@ -1,4 +1,10 @@
-use crate::{diff::percent_of, error::VerifyError, reader::TableReader};
+use crate::{
+    diff::percent_of,
+    error::VerifyError,
+    page::{self, PageSizer},
+    profile::{self, ReadProfile},
+    reader::TableReader,
+};
 use connectors::{
     sql::{filter::SqlFilter, metadata::table::TableMetadata},
     traits::{introspector::SchemaIntrospector, reader::DataReader},
@@ -17,9 +23,6 @@ use model::{
 use query_builder::offsets::OffsetStrategyFactory;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use tracing::info;
-
-/// Rows fetched per read while hashing.
-const READ_BATCH_ROWS: usize = 1000;
 
 /// How rows are hashed. Both sides of a comparison must use the same spec, or
 /// equal rows hash differently.
@@ -204,9 +207,16 @@ async fn scan(
 
     let started = Instant::now();
     let mut ticker = Ticker::new(PROGRESS_INTERVAL);
+    let mut profile = ReadProfile::default();
+    let mut pages = PageSizer::new(profile::page_rows_override());
 
     while let Some(c) = cursor {
-        let (rows, next_cursor) = reader.next_batch(c, READ_BATCH_ROWS).await?;
+        let fetch = Instant::now();
+        let (rows, next_cursor) = reader.next_batch(c, pages.rows()).await?;
+        let bytes = page::payload_bytes(&rows);
+
+        profile.page(fetch.elapsed(), &rows);
+        pages.observe(rows.len(), bytes);
         rows_read += rows.len() as u64;
 
         if ticker.report(rows_read) {
@@ -223,13 +233,20 @@ async fn scan(
         }
 
         if !rows.is_empty() {
+            let hash = Instant::now();
             let refs: Vec<&Record> = rows.iter().collect();
             let entries = hasher.hash_rows(&refs, &col_types, &spec.key_columns);
+            profile.hashed(hash.elapsed());
+
+            let write = Instant::now();
             on_batch(&entries)?;
+            profile.written(write.elapsed());
         }
 
         cursor = next_cursor;
     }
+
+    profile.log(table, started.elapsed());
 
     if started.elapsed() >= PROGRESS_INTERVAL {
         info!(table = %table, rows = rows_read, "table read; sorting");
