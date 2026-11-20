@@ -88,6 +88,15 @@ pub enum BinaryOperator {
     // Logical
     And,
     Or,
+
+    // Arithmetic
+    Plus,     // +
+    Minus,    // -
+    Multiply, // *
+    Modulo,   // %
+
+    /// Integer division, truncating: MySQL `DIV`, PostgreSQL `/` on integers.
+    IntDiv,
 }
 
 #[allow(clippy::should_implement_trait)]

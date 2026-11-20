@@ -97,6 +97,11 @@ impl Render for BinaryOp {
             BinaryOperator::GtEq => " >= ",
             BinaryOperator::And => " AND ",
             BinaryOperator::Or => " OR ",
+            BinaryOperator::Plus => " + ",
+            BinaryOperator::Minus => " - ",
+            BinaryOperator::Multiply => " * ",
+            BinaryOperator::Modulo => " % ",
+            BinaryOperator::IntDiv => r.dialect.int_div_operator(),
         };
         r.sql.push_str(op_str);
 

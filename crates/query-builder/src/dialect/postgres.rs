@@ -231,4 +231,12 @@ impl QueryDialect for Postgres {
     fn cast_null_literals(&self) -> bool {
         true
     }
+
+    fn values_row_keyword(&self) -> &'static str {
+        ""
+    }
+
+    fn int_div_operator(&self) -> &'static str {
+        " / "
+    }
 }

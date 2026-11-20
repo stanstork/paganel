@@ -240,4 +240,12 @@ impl QueryDialect for MySql {
     fn auto_inc_requires_key(&self) -> bool {
         true
     }
+
+    fn values_row_keyword(&self) -> &'static str {
+        "ROW"
+    }
+
+    fn int_div_operator(&self) -> &'static str {
+        " DIV "
+    }
 }

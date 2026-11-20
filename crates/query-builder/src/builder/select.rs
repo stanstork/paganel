@@ -4,7 +4,7 @@ use crate::{
     ast::{
         common::{JoinKind, OrderDir, TableRef},
         expr::Expr,
-        select::{FromClause, JoinClause, OrderByExpr, Select},
+        select::{FromClause, JoinClause, OrderByExpr, Select, TableSource},
     },
     offsets::OffsetStrategy,
 };
@@ -63,8 +63,20 @@ impl SelectBuilder<SelectState> {
     /// Adds a `FROM` clause specifying the primary table.
     pub fn from(mut self, table: TableRef, alias: Option<&str>) -> SelectBuilder<FromState> {
         self.ast.from = Some(FromClause {
-            table,
+            table: TableSource::Table(table),
             alias: alias.map(String::from),
+        });
+        SelectBuilder {
+            ast: self.ast,
+            _state: FromState,
+        }
+    }
+
+    /// Reads from a derived table or a `VALUES` list instead of a table.
+    pub fn from_source(mut self, source: TableSource, alias: &str) -> SelectBuilder<FromState> {
+        self.ast.from = Some(FromClause {
+            table: source,
+            alias: Some(alias.to_string()),
         });
         SelectBuilder {
             ast: self.ast,
@@ -84,6 +96,12 @@ impl SelectBuilder<FromState> {
             alias: alias.map(String::from),
             on,
         });
+        self
+    }
+
+    /// Adds a `GROUP BY` clause to the query.
+    pub fn group_by(mut self, exprs: Vec<Expr>) -> Self {
+        self.ast.group_by = exprs;
         self
     }
 
@@ -139,6 +157,7 @@ mod tests {
         ast::{
             common::{JoinKind, OrderDir, TableRef},
             expr::{BinaryOp, BinaryOperator, Expr, Ident},
+            select::TableSource,
         },
         builder::select::SelectBuilder,
         ident_q,
@@ -184,7 +203,7 @@ mod tests {
             .build();
 
         assert_eq!(ast.columns, vec![ident("id"), ident("name")]);
-        assert_eq!(ast.from.unwrap().table.name, "users");
+        assert_eq!(ast.from.unwrap().table, TableSource::Table(table("users")));
         assert!(ast.where_clause.is_none());
     }
 
