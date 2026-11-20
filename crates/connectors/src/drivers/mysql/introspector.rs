@@ -48,6 +48,9 @@ impl SchemaIntrospector for MySqlDriver {
                 Ok((column_metadata.name.clone(), column_metadata))
             })
             .collect::<Result<HashMap<_, _>, DriverError>>()?;
+
+        drop(conn);
+
         let fks = self.fk_metadata(table).await?;
 
         MetadataProvider::construct_table_metadata(table, columns, fks)

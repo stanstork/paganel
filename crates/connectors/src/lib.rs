@@ -3,5 +3,6 @@
 
 pub mod drivers;
 pub mod error;
+pub mod session;
 pub mod sql;
 pub mod traits;

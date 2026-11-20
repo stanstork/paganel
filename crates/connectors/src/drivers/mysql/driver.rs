@@ -1,6 +1,7 @@
 use crate::{
     drivers::mysql::tls,
     error::DriverError,
+    session::SessionSettings,
     sql::metadata::capabilities::Capabilities,
     traits::driver::{Driver, DriverInfo},
 };
@@ -37,6 +38,27 @@ impl MySqlDriver {
         let capabilities = Self::detect_capabilities(&pool).await?;
 
         info!(driver = "mysql", "database connection established");
+
+        Ok(Self {
+            pool,
+            capabilities,
+            advised: Arc::new(AtomicBool::new(false)),
+        })
+    }
+
+    /// A driver on one connection, with `settings` applied to it: for a
+    /// comparison whose queries must share a session.
+    pub async fn connect_session(
+        url: &str,
+        settings: &SessionSettings,
+    ) -> Result<Self, DriverError> {
+        let pool = tls::pinned_pool_from_url(url, settings.mysql_statements())?;
+        let capabilities = Self::detect_capabilities(&pool).await?;
+
+        info!(
+            driver = "mysql",
+            "database session established with settings: {:?}", settings
+        );
 
         Ok(Self {
             pool,

@@ -1,6 +1,7 @@
 use super::{config::CopyFormat, queries::escape_identifier, tls};
 use crate::{
     error::DriverError,
+    session::SessionSettings,
     sql::metadata::capabilities::Capabilities,
     traits::driver::{Driver, DriverInfo},
 };
@@ -34,6 +35,25 @@ impl PgDriver {
     /// Establishes a connection (schema `public`) and detects server capabilities.
     pub async fn connect(url: &str) -> Result<Self, DriverError> {
         Self::connect_with_schema(url, DEFAULT_SCHEMA).await
+    }
+
+    /// A driver on its own connection with `settings` applied.
+    pub async fn connect_session(
+        url: &str,
+        schema: &str,
+        settings: &SessionSettings,
+    ) -> Result<Self, DriverError> {
+        let driver = Self::connect_with_schema(url, schema).await?;
+        {
+            let client = driver.client.read().await;
+            for statement in settings.postgres_statements() {
+                client
+                    .batch_execute(&statement)
+                    .await
+                    .map_err(|e| DriverError::ConnectionError(e.to_string()))?;
+            }
+        }
+        Ok(driver)
     }
 
     /// Establishes a connection scoped to `schema`. The session `search_path` is

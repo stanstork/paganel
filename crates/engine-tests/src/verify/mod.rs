@@ -5,6 +5,7 @@ macro_rules! verify_config {
     };
 }
 
+pub mod blocks;
 pub mod drift;
 pub mod extra;
 pub mod hooks;

@@ -1,9 +1,26 @@
 use crate::error::DriverError;
-use mysql_async::{Opts, OptsBuilder, Pool};
+use mysql_async::{Opts, OptsBuilder, Pool, PoolConstraints, PoolOpts};
 use std::path::PathBuf;
 
 /// Build a connection pool from a URL.
 pub(crate) fn pool_from_url(url: &str) -> Result<Pool, DriverError> {
+    Ok(Pool::new(opts_from_url(url)?))
+}
+
+/// A pool of exactly one connection that runs `setup` on connect and again
+/// after every reset.
+pub(crate) fn pinned_pool_from_url(url: &str, setup: Vec<String>) -> Result<Pool, DriverError> {
+    let one = PoolConstraints::new(1, 1)
+        .ok_or_else(|| DriverError::ConnectionError("invalid pool constraints".into()))?;
+    let opts = OptsBuilder::from_opts(opts_from_url(url)?)
+        .setup(setup)
+        .pool_opts(PoolOpts::default().with_constraints(one));
+    Ok(Pool::new(opts))
+}
+
+/// Connection options from a URL, with an `ssl_ca` parameter turned into a
+/// root certificate (mysql_async rejects parameters it doesn't know).
+fn opts_from_url(url: &str) -> Result<Opts, DriverError> {
     let (cleaned, ca_path) = extract_ssl_ca(url)?;
 
     let opts = Opts::from_url(&cleaned).map_err(|e| DriverError::ConnectionError(e.to_string()))?;
@@ -20,7 +37,7 @@ pub(crate) fn pool_from_url(url: &str) -> Result<Pool, DriverError> {
         None => opts,
     };
 
-    Ok(Pool::new(opts))
+    Ok(opts)
 }
 
 /// Split an `ssl_ca` parameter out of the URL (mysql_async rejects unknown

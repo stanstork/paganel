@@ -14,10 +14,11 @@ pub struct FetchRowsRequest {
     pub cursor: Cursor,
     pub strategy: Arc<dyn OffsetStrategy>,
     /// Optional IN clause: column name and list of values
-    /// e.g., ("id", vec![Value::Int(1), Value::Int(2)])
     pub in_clause: Option<(String, Vec<Value>)>,
     /// Whether to order results randomly (ORDER BY RANDOM()/RAND())
     pub order_random: bool,
+    /// Optional key ranges: column name and closed `[lo, hi]` bounds
+    pub key_ranges: Option<(String, Vec<(Value, Value)>)>,
 }
 
 pub struct FetchRowsRequestBuilder {
@@ -31,6 +32,7 @@ pub struct FetchRowsRequestBuilder {
     strategy: Arc<dyn OffsetStrategy>,
     in_clause: Option<(String, Vec<Value>)>,
     order_random: bool,
+    key_ranges: Option<(String, Vec<(Value, Value)>)>,
 }
 
 impl FetchRowsRequestBuilder {
@@ -46,6 +48,7 @@ impl FetchRowsRequestBuilder {
             strategy: Arc::new(DefaultOffset { offset: 0 }),
             in_clause: None,
             order_random: false,
+            key_ranges: None,
         }
     }
 
@@ -97,6 +100,12 @@ impl FetchRowsRequestBuilder {
         self
     }
 
+    /// Keeps only rows whose `column` falls in one of `ranges`
+    pub fn key_ranges(mut self, column: String, ranges: Vec<(Value, Value)>) -> Self {
+        self.key_ranges = Some((column, ranges));
+        self
+    }
+
     pub fn build(self) -> FetchRowsRequest {
         FetchRowsRequest {
             table: self.table,
@@ -109,6 +118,7 @@ impl FetchRowsRequestBuilder {
             strategy: self.strategy,
             in_clause: self.in_clause,
             order_random: self.order_random,
+            key_ranges: self.key_ranges,
         }
     }
 }
