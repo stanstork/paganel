@@ -1,3 +1,5 @@
+use super::numeric::PgNumeric;
+use bigdecimal::BigDecimal;
 use bytes::BytesMut;
 use chrono::{DateTime, TimeZone, Utc};
 use model::core::value::Value;
@@ -89,7 +91,7 @@ impl ToSql for FlexLiteral {
             Type::INT8 => raw.parse::<i64>()?.to_sql(ty, out),
             Type::FLOAT4 => raw.parse::<f32>()?.to_sql(ty, out),
             Type::FLOAT8 => raw.parse::<f64>()?.to_sql(ty, out),
-            Type::NUMERIC => RustDecimal::from_str(raw)?.to_sql(ty, out),
+            Type::NUMERIC => PgNumeric(BigDecimal::from_str(raw)?).to_sql(ty, out),
             _ => self.0.to_sql(ty, out),
         }
     }
@@ -121,10 +123,7 @@ impl PgParam {
             Value::Int(i) => PgParam(Box::new(FlexInt(*i))),
             Value::UInt(u) => PgParam(Box::new(FlexInt(*u as i64))),
             Value::Float(f) => PgParam(Box::new(FlexFloat(*f))),
-            Value::Decimal(d) => {
-                let decimal = RustDecimal::from_str(&d.to_string()).unwrap_or_default();
-                PgParam(Box::new(decimal))
-            }
+            Value::Decimal(d) => PgParam(Box::new(PgNumeric(d.clone()))),
 
             // String. Bound flexibly: filter literals arrive as text regardless of
             // the column they are compared against.

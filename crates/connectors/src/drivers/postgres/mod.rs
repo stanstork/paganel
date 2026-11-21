@@ -4,6 +4,7 @@ pub mod driver;
 pub mod encoding;
 pub mod executor;
 pub mod introspector;
+pub mod numeric;
 pub mod params;
 pub mod queries;
 pub mod reader;
