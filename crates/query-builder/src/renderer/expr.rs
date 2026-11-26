@@ -69,6 +69,13 @@ impl Render for Expr {
                 r.sql
                     .push_str(if *negated { " IS NOT NULL" } else { " IS NULL" });
             }
+            Expr::TrimTrailing { expr, chars } => {
+                r.sql.push_str("TRIM(TRAILING '");
+                r.sql.push_str(&chars.replace('\'', "''"));
+                r.sql.push_str("' FROM ");
+                expr.render(r);
+                r.sql.push(')');
+            }
         }
     }
 }

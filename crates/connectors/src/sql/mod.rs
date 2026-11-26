@@ -1,3 +1,4 @@
+pub mod checksum;
 pub mod filter;
 pub mod join;
 pub mod macros;

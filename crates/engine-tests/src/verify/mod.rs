@@ -10,6 +10,7 @@ pub mod drift;
 pub mod extra;
 pub mod hooks;
 pub mod matches;
+pub mod normal;
 pub mod pair;
 pub mod receipts;
 pub mod tampering;
