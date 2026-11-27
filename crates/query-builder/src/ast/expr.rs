@@ -53,6 +53,10 @@ pub enum Expr {
     /// NULL check
     /// e.g., `return_date IS NULL` or `return_date IS NOT NULL`
     IsNull { expr: Box<Expr>, negated: bool },
+
+    /// Standard SQL `TRIM(TRAILING '<chars>' FROM expr)`, the same in MySQL
+    /// and PostgreSQL.
+    TrimTrailing { expr: Box<Expr>, chars: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,6 +92,15 @@ pub enum BinaryOperator {
     // Logical
     And,
     Or,
+
+    // Arithmetic
+    Plus,     // +
+    Minus,    // -
+    Multiply, // *
+    Modulo,   // %
+
+    /// Integer division, truncating: MySQL `DIV`, PostgreSQL `/` on integers.
+    IntDiv,
 }
 
 #[allow(clippy::should_implement_trait)]

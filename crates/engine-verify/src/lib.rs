@@ -1,12 +1,15 @@
 #![deny(clippy::unwrap_used)]
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
+pub mod blocks;
 pub mod diff;
 pub mod drift;
 pub mod error;
 pub mod hooks;
 pub mod import;
+pub mod page;
 pub mod pair;
+mod profile;
 pub mod progress;
 pub mod reader;
 pub mod state;

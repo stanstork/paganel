@@ -90,6 +90,48 @@ impl<'a> QueryGenerator<'a> {
             };
         }
 
+        // Apply key ranges if specified: (col >= lo AND col <= hi) OR ...
+        if let Some((ref column, ref ranges)) = request.key_ranges
+            && !ranges.is_empty()
+        {
+            let col = || {
+                Expr::Identifier(Ident {
+                    qualifier: Some(alias.to_string()),
+                    name: column.clone(),
+                })
+            };
+            let bound = |left: Expr, op: BinaryOperator, value: &Value| {
+                Expr::BinaryOp(Box::new(BinaryOp {
+                    left,
+                    op,
+                    right: Expr::Value(value.clone()),
+                }))
+            };
+            let both = |left: Expr, right: Expr, op: BinaryOperator| {
+                Expr::BinaryOp(Box::new(BinaryOp { left, op, right }))
+            };
+
+            let ranges_expr = ranges
+                .iter()
+                .map(|(lo, hi)| {
+                    both(
+                        bound(col(), BinaryOperator::GtEq, lo),
+                        bound(col(), BinaryOperator::LtEq, hi),
+                        BinaryOperator::And,
+                    )
+                })
+                .reduce(|acc, range| both(acc, range, BinaryOperator::Or));
+
+            if let Some(ranges_expr) = ranges_expr {
+                select = match select.ast.where_clause.take() {
+                    Some(existing) => {
+                        select.where_clause(both(existing, ranges_expr, BinaryOperator::And))
+                    }
+                    None => select.where_clause(ranges_expr),
+                };
+            }
+        }
+
         // Apply random ordering if requested
         if request.order_random {
             select = select.order_by_random();

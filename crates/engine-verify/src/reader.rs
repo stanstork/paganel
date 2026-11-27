@@ -16,6 +16,7 @@ pub struct TableReader {
     offset_strategy: Arc<dyn OffsetStrategy>,
     filter: Option<SqlFilter>,
     keys: Option<(String, Vec<Value>)>,
+    ranges: Option<(String, Vec<(Value, Value)>)>,
 }
 
 impl TableReader {
@@ -30,6 +31,7 @@ impl TableReader {
             offset_strategy,
             filter: None,
             keys: None,
+            ranges: None,
         }
     }
 
@@ -40,6 +42,11 @@ impl TableReader {
 
     pub fn with_keys(mut self, column: String, values: Vec<Value>) -> Self {
         self.keys = Some((column, values));
+        self
+    }
+
+    pub fn with_ranges(mut self, column: String, ranges: Vec<(Value, Value)>) -> Self {
+        self.ranges = Some((column, ranges));
         self
     }
 
@@ -76,6 +83,10 @@ impl TableReader {
 
         if let Some((column, values)) = &self.keys {
             request = request.in_clause(column.clone(), values.clone());
+        }
+
+        if let Some((column, ranges)) = &self.ranges {
+            request = request.key_ranges(column.clone(), ranges.clone());
         }
 
         request.build()

@@ -1,7 +1,7 @@
 use crate::{
     ast::{
         common::{JoinKind, OrderDir},
-        select::{FromClause, JoinClause, OrderByExpr, Select},
+        select::{FromClause, JoinClause, OrderByExpr, Select, TableSource},
     },
     renderer::{Render, Renderer},
 };
@@ -35,7 +35,18 @@ impl Render for Select {
             where_clause.render(r);
         }
 
-        // 5. ORDER BY
+        // 5. GROUP BY
+        if !self.group_by.is_empty() {
+            r.sql.push_str(" GROUP BY ");
+            for (i, expr) in self.group_by.iter().enumerate() {
+                if i > 0 {
+                    r.sql.push_str(", ");
+                }
+                expr.render(r);
+            }
+        }
+
+        // 6. ORDER BY
         if !self.order_by.is_empty() {
             r.sql.push_str(" ORDER BY ");
             for (i, order) in self.order_by.iter().enumerate() {
@@ -46,13 +57,13 @@ impl Render for Select {
             }
         }
 
-        // 6. LIMIT
+        // 7. LIMIT
         if let Some(limit) = &self.limit {
             r.sql.push_str(" LIMIT ");
             limit.render(r);
         }
 
-        // 7. OFFSET
+        // 8. OFFSET
         if let Some(offset) = &self.offset {
             r.sql.push_str(" OFFSET ");
             offset.render(r);
@@ -63,11 +74,49 @@ impl Render for Select {
 impl Render for FromClause {
     fn render(&self, r: &mut Renderer) {
         r.sql.push_str("FROM ");
-        r.sql
-            .push_str(&r.dialect.quote_identifier(&self.table.name));
+        match &self.table {
+            TableSource::Table(table) => {
+                r.sql.push_str(&r.dialect.quote_identifier(&table.name));
+            }
+            TableSource::Subquery(select) => {
+                r.sql.push('(');
+                select.render(r);
+                r.sql.push(')');
+            }
+            TableSource::Values { rows, .. } => {
+                let keyword = r.dialect.values_row_keyword();
+                r.sql.push_str("(VALUES ");
+                for (i, row) in rows.iter().enumerate() {
+                    if i > 0 {
+                        r.sql.push_str(", ");
+                    }
+                    r.sql.push_str(keyword);
+                    r.sql.push('(');
+                    for (j, expr) in row.iter().enumerate() {
+                        if j > 0 {
+                            r.sql.push_str(", ");
+                        }
+                        expr.render(r);
+                    }
+                    r.sql.push(')');
+                }
+                r.sql.push(')');
+            }
+        }
+
         if let Some(alias) = &self.alias {
             r.sql.push_str(" AS ");
             r.sql.push_str(&r.dialect.quote_identifier(alias));
+        }
+        if let TableSource::Values { columns, .. } = &self.table {
+            r.sql.push_str(" (");
+            for (i, column) in columns.iter().enumerate() {
+                if i > 0 {
+                    r.sql.push_str(", ");
+                }
+                r.sql.push_str(&r.dialect.quote_identifier(column));
+            }
+            r.sql.push(')');
         }
     }
 }
@@ -114,9 +163,10 @@ mod tests {
         ast::{
             common::{JoinKind, OrderDir, TableRef},
             expr::{BinaryOp, BinaryOperator, Expr, FunctionCall, Ident},
-            select::{FromClause, JoinClause, OrderByExpr, Select},
+            select::{FromClause, JoinClause, OrderByExpr, Select, TableSource},
         },
-        dialect::{MySql, Postgres},
+        builder::select::SelectBuilder,
+        dialect::{MySql, Postgres, QueryDialect},
         renderer::{Render, Renderer},
     };
 
@@ -143,10 +193,10 @@ mod tests {
         let ast = Select {
             columns: vec![ident("id"), ident("name")],
             from: Some(FromClause {
-                table: TableRef {
+                table: TableSource::Table(TableRef {
                     schema: None,
                     name: "users".to_string(),
-                },
+                }),
                 alias: None,
             }),
             where_clause: Some(Expr::BinaryOp(Box::new(BinaryOp {
@@ -171,10 +221,10 @@ mod tests {
         let ast = Select {
             columns: vec![ident("id"), ident("name")],
             from: Some(FromClause {
-                table: TableRef {
+                table: TableSource::Table(TableRef {
                     schema: None,
                     name: "users".to_string(),
-                },
+                }),
                 alias: None,
             }),
             where_clause: Some(Expr::BinaryOp(Box::new(BinaryOp {
@@ -209,10 +259,10 @@ mod tests {
                 },
             ],
             from: Some(FromClause {
-                table: TableRef {
+                table: TableSource::Table(TableRef {
                     schema: None,
                     name: "users".to_string(),
-                },
+                }),
                 alias: Some("u".to_string()),
             }),
             joins: vec![JoinClause {
@@ -237,6 +287,7 @@ mod tests {
                 expr: qual_ident("u", "created_at"),
                 direction: Some(OrderDir::Desc),
             }],
+            group_by: vec![],
             limit: Some(value(Value::Int(10))),
             offset: Some(value(Value::Int(20))),
         };
@@ -263,10 +314,10 @@ mod tests {
         let ast = Select {
             columns: vec![ident("id"), ident("name")],
             from: Some(FromClause {
-                table: TableRef {
+                table: TableSource::Table(TableRef {
                     schema: None,
                     name: "users".to_string(),
-                },
+                }),
                 alias: None,
             }),
             order_by: vec![OrderByExpr {
@@ -294,10 +345,10 @@ mod tests {
         let ast = Select {
             columns: vec![ident("id"), ident("name")],
             from: Some(FromClause {
-                table: TableRef {
+                table: TableSource::Table(TableRef {
                     schema: None,
                     name: "products".to_string(),
-                },
+                }),
                 alias: None,
             }),
             order_by: vec![OrderByExpr {
@@ -325,10 +376,10 @@ mod tests {
         let ast = Select {
             columns: vec![ident("id"), ident("name"), ident("email")],
             from: Some(FromClause {
-                table: TableRef {
+                table: TableSource::Table(TableRef {
                     schema: None,
                     name: "users".to_string(),
-                },
+                }),
                 alias: None,
             }),
             where_clause: Some(ident("id").in_list(vec![
@@ -356,10 +407,10 @@ mod tests {
         let ast = Select {
             columns: vec![ident("product_id"), ident("name")],
             from: Some(FromClause {
-                table: TableRef {
+                table: TableSource::Table(TableRef {
                     schema: None,
                     name: "products".to_string(),
-                },
+                }),
                 alias: None,
             }),
             where_clause: Some(ident("status").in_list(vec![
@@ -409,10 +460,10 @@ mod tests {
         let ast = Select {
             columns: vec![ident("id"), ident("name"), ident("price")],
             from: Some(FromClause {
-                table: TableRef {
+                table: TableSource::Table(TableRef {
                     schema: None,
                     name: "products".to_string(),
-                },
+                }),
                 alias: None,
             }),
             where_clause: Some(combined),
@@ -444,10 +495,10 @@ mod tests {
         let ast = Select {
             columns: vec![ident("id"), ident("name"), ident("email")],
             from: Some(FromClause {
-                table: TableRef {
+                table: TableSource::Table(TableRef {
                     schema: None,
                     name: "users".to_string(),
-                },
+                }),
                 alias: None,
             }),
             where_clause: Some(ident("id").in_list(vec![
@@ -489,10 +540,10 @@ mod tests {
         let ast = Select {
             columns: vec![ident("id"), ident("title")],
             from: Some(FromClause {
-                table: TableRef {
+                table: TableSource::Table(TableRef {
                     schema: None,
                     name: "posts".to_string(),
-                },
+                }),
                 alias: None,
             }),
             where_clause: Some(ident("status").in_list(vec![
@@ -523,6 +574,120 @@ mod tests {
                 Value::String("featured".to_string()),
                 Value::Int(5)
             ]
+        );
+    }
+
+    fn render(select: &Select, dialect: &dyn QueryDialect) -> (String, Vec<Value>) {
+        let mut r = Renderer::new(dialect);
+        select.render(&mut r);
+        r.finish()
+    }
+
+    fn op(left: Expr, op: BinaryOperator, right: Expr) -> Expr {
+        Expr::BinaryOp(Box::new(BinaryOp { left, op, right }))
+    }
+
+    fn orders() -> TableRef {
+        TableRef {
+            schema: None,
+            name: "orders".into(),
+        }
+    }
+
+    fn segments() -> Select {
+        let seg = op(
+            op(ident("id"), BinaryOperator::Minus, value(Value::Int(1))),
+            BinaryOperator::IntDiv,
+            value(Value::Int(20)),
+        );
+        let inner = SelectBuilder::new()
+            .select(vec![seg.alias("seg")])
+            .from(orders(), None)
+            .build();
+        SelectBuilder::new()
+            .select(vec![
+                ident("seg"),
+                Expr::FunctionCall(FunctionCall::count_all()).alias("n"),
+            ])
+            .from_source(TableSource::Subquery(Box::new(inner)), "v")
+            .group_by(vec![ident("seg")])
+            .order_by(ident("seg"), None)
+            .build()
+    }
+
+    #[test]
+    fn group_by_over_a_derived_table() {
+        let (sql, params) = render(&segments(), &Postgres);
+        assert_eq!(
+            sql,
+            r#"SELECT "seg", COUNT(*) AS "n" FROM (SELECT (("id" - $1) / $2) AS "seg" FROM "orders") AS "v" GROUP BY "seg" ORDER BY "seg""#
+        );
+        assert_eq!(params, vec![Value::Int(1), Value::Int(20)]);
+
+        let (sql, _) = render(&segments(), &MySql);
+        assert_eq!(
+            sql,
+            "SELECT `seg`, COUNT(*) AS `n` FROM (SELECT ((`id` - ?) DIV ?) AS `seg` FROM `orders`) AS `v` GROUP BY `seg` ORDER BY `seg`"
+        );
+    }
+
+    /// Narrowing's shape: a `VALUES` list of ranges joined to the table.
+    fn ranges() -> Select {
+        let rows = vec![
+            vec![
+                value(Value::Int(7)),
+                value(Value::Int(140)),
+                value(Value::Int(160)),
+            ],
+            vec![
+                value(Value::Int(9)),
+                value(Value::Int(180)),
+                value(Value::Int(200)),
+            ],
+        ];
+        let on = op(
+            op(
+                qual_ident("t", "id"),
+                BinaryOperator::GtEq,
+                qual_ident("r", "lo"),
+            ),
+            BinaryOperator::And,
+            op(
+                qual_ident("t", "id"),
+                BinaryOperator::LtEq,
+                qual_ident("r", "hi"),
+            ),
+        );
+        SelectBuilder::new()
+            .select(vec![
+                qual_ident("r", "seg"),
+                Expr::FunctionCall(FunctionCall::count_all()).alias("n"),
+            ])
+            .from_source(
+                TableSource::Values {
+                    columns: vec!["seg".into(), "lo".into(), "hi".into()],
+                    rows,
+                },
+                "r",
+            )
+            .join(JoinKind::Inner, orders(), Some("t"), on)
+            .group_by(vec![qual_ident("r", "seg")])
+            .build()
+    }
+
+    #[test]
+    fn values_list_as_a_table() {
+        let (sql, params) = render(&ranges(), &Postgres);
+        assert_eq!(
+            sql,
+            r#"SELECT "r"."seg", COUNT(*) AS "n" FROM (VALUES ($1, $2, $3), ($4, $5, $6)) AS "r" ("seg", "lo", "hi") INNER JOIN "orders" AS "t" ON (("t"."id" >= "r"."lo") AND ("t"."id" <= "r"."hi")) GROUP BY "r"."seg""#
+        );
+        assert_eq!(params.len(), 6);
+
+        let (sql, _) = render(&ranges(), &MySql);
+        assert_eq!(
+            sql,
+            "SELECT `r`.`seg`, COUNT(*) AS `n` FROM (VALUES ROW(?, ?, ?), ROW(?, ?, ?)) AS `r` (`seg`, `lo`, `hi`) INNER JOIN `orders` AS `t` ON ((`t`.`id` >= `r`.`lo`) AND (`t`.`id` <= `r`.`hi`)) GROUP BY `r`.`seg`"
         );
     }
 }

@@ -1,13 +1,12 @@
+use super::numeric::PgNumeric;
 use crate::traits::row_decoder::RowDecoder;
-use bigdecimal::BigDecimal;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use model::{
     core::{types::Type, value::Value},
     records::{OpType, Record, RecordSchema, SchemaColumn},
 };
-use rust_decimal::Decimal as RustDecimal;
+use std::net::IpAddr;
 use std::sync::Arc;
-use std::{net::IpAddr, str::FromStr};
 use tokio_postgres::Row as PgRow;
 use tokio_postgres::types::{FromSql, Kind, Type as PgType};
 use uuid::Uuid;
@@ -210,9 +209,9 @@ fn extract_value(row: &PgRow, idx: usize, pg_type: &PgType) -> Option<Value> {
 
         // Decimal
         PgType::NUMERIC => row
-            .try_get::<_, RustDecimal>(idx)
+            .try_get::<_, PgNumeric>(idx)
             .ok()
-            .map(|d| Value::Decimal(BigDecimal::from_str(&d.to_string()).unwrap_or_default())),
+            .map(|d| Value::Decimal(d.0)),
 
         // String types.
         // BPCHAR (CHAR(n)) is blank-padded to the declared length on storage and

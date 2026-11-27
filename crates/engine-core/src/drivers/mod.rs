@@ -1,7 +1,11 @@
 use crate::{context::exec::ConnectionPool, dispatch_driver};
 use connectors::{
-    drivers::{mysql::driver::MySqlDriver, postgres::driver::PgDriver},
+    drivers::{
+        mysql::driver::MySqlDriver,
+        postgres::driver::{DEFAULT_SCHEMA, PgDriver},
+    },
     error::DriverError,
+    session::SessionSettings,
     sql::metadata::table::TableMetadata,
     traits::introspector::SchemaIntrospector,
 };
@@ -23,6 +27,35 @@ impl DriverRef {
         match self {
             Self::Postgres(_) => Dialect::Postgres,
             Self::MySql(_) => Dialect::MySql,
+        }
+    }
+
+    /// A driver on its own pinned connection with `settings` applied.
+    pub async fn open_session(
+        connection: &Connection,
+        settings: &SessionSettings,
+    ) -> Result<Self, DriverError> {
+        let url = connection
+            .properties
+            .get_string("url")
+            .ok_or_else(|| DriverError::InvalidUrl("missing 'url' property".to_string()))?;
+
+        match connection.driver.as_str() {
+            "postgres" | "postgresql" => {
+                let schema = connection
+                    .properties
+                    .get_string("schema")
+                    .unwrap_or_else(|| DEFAULT_SCHEMA.to_string());
+                let d = PgDriver::connect_session(&url, &schema, settings).await?;
+                Ok(DriverRef::Postgres(Arc::new(d)))
+            }
+            "mysql" => {
+                let d = MySqlDriver::connect_session(&url, settings).await?;
+                Ok(DriverRef::MySql(Arc::new(d)))
+            }
+            other => Err(DriverError::UnsupportedDriver(format!(
+                "Driver '{other}' not supported"
+            ))),
         }
     }
 

@@ -1,4 +1,10 @@
-use crate::{diff::percent_of, error::VerifyError, reader::TableReader};
+use crate::{
+    diff::percent_of,
+    error::VerifyError,
+    page::{self, PageSizer},
+    profile::{self, ReadProfile},
+    reader::TableReader,
+};
 use connectors::{
     sql::{filter::SqlFilter, metadata::table::TableMetadata},
     traits::{introspector::SchemaIntrospector, reader::DataReader},
@@ -18,8 +24,7 @@ use query_builder::offsets::OffsetStrategyFactory;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use tracing::info;
 
-/// Rows fetched per read while hashing.
-const READ_BATCH_ROWS: usize = 1000;
+pub(crate) const MAX_RANGES_PER_QUERY: usize = 200;
 
 /// How rows are hashed. Both sides of a comparison must use the same spec, or
 /// equal rows hash differently.
@@ -204,9 +209,16 @@ async fn scan(
 
     let started = Instant::now();
     let mut ticker = Ticker::new(PROGRESS_INTERVAL);
+    let mut profile = ReadProfile::default();
+    let mut pages = PageSizer::new(profile::page_rows_override());
 
     while let Some(c) = cursor {
-        let (rows, next_cursor) = reader.next_batch(c, READ_BATCH_ROWS).await?;
+        let fetch = Instant::now();
+        let (rows, next_cursor) = reader.next_batch(c, pages.rows()).await?;
+        let bytes = page::payload_bytes(&rows);
+
+        profile.page(fetch.elapsed(), &rows);
+        pages.observe(rows.len(), bytes);
         rows_read += rows.len() as u64;
 
         if ticker.report(rows_read) {
@@ -223,13 +235,20 @@ async fn scan(
         }
 
         if !rows.is_empty() {
+            let hash = Instant::now();
             let refs: Vec<&Record> = rows.iter().collect();
             let entries = hasher.hash_rows(&refs, &col_types, &spec.key_columns);
+            profile.hashed(hash.elapsed());
+
+            let write = Instant::now();
             on_batch(&entries)?;
+            profile.written(write.elapsed());
         }
 
         cursor = next_cursor;
     }
+
+    profile.log(table, started.elapsed());
 
     if started.elapsed() >= PROGRESS_INTERVAL {
         info!(table = %table, rows = rows_read, "table read; sorting");
@@ -240,7 +259,7 @@ async fn scan(
 
 /// A keyset reader over `meta`: paged by the primary key when there is one,
 /// so reads stay index-ordered; otherwise by the spec's key.
-fn table_reader(
+pub(crate) fn table_reader(
     driver: &DriverRef,
     meta: &TableMetadata,
     spec: &HashSpec,
@@ -261,6 +280,37 @@ fn table_reader(
         let data_reader: Arc<dyn DataReader> = d.clone() as _;
         Ok(TableReader::new(data_reader, meta.clone(), offset_strategy))
     })
+}
+
+/// Hash only the rows whose `column` falls in one of `ranges` (each closed),
+/// into `sink`. Returns the rows read.
+pub(crate) async fn hash_ranges(
+    driver: &DriverRef,
+    meta: &TableMetadata,
+    spec: &HashSpec,
+    sink: &HashSink<'_>,
+    filter: Option<&SqlFilter>,
+    column: &str,
+    ranges: &[(i64, i64)],
+) -> Result<u64, VerifyError> {
+    let mut rows = 0;
+    for chunk in ranges.chunks(MAX_RANGES_PER_QUERY) {
+        let bounds = chunk
+            .iter()
+            .map(|&(lo, hi)| (Value::Int(lo), Value::Int(hi)))
+            .collect();
+        let reader = table_reader(driver, meta, spec)?
+            .with_filter(filter.cloned())
+            .with_ranges(column.to_string(), bounds);
+
+        rows += scan(&reader, meta, spec, None, |entries| {
+            sink.log
+                .append(sink.scope, sink.pipeline, sink.table, entries)
+                .map_err(Into::into)
+        })
+        .await?;
+    }
+    Ok(rows)
 }
 
 #[cfg(test)]

@@ -24,6 +24,9 @@ pub struct Select {
     /// The ORDER BY clause.
     pub order_by: Vec<OrderByExpr>,
 
+    /// The GROUP BY clause.
+    pub group_by: Vec<Expr>,
+
     /// The LIMIT clause.
     pub limit: Option<Expr>,
 
@@ -33,7 +36,7 @@ pub struct Select {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FromClause {
-    pub table: TableRef,
+    pub table: TableSource,
     pub alias: Option<String>,
 }
 
@@ -50,4 +53,20 @@ pub struct JoinClause {
 pub struct OrderByExpr {
     pub expr: Expr,
     pub direction: Option<OrderDir>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TableSource {
+    Table(TableRef),
+    Subquery(Box<Select>),
+    Values {
+        columns: Vec<String>,
+        rows: Vec<Vec<Expr>>,
+    },
+}
+
+impl From<TableRef> for TableSource {
+    fn from(table: TableRef) -> Self {
+        TableSource::Table(table)
+    }
 }

@@ -432,6 +432,8 @@ fn hex(bytes: &[u8]) -> String {
 
 /// Canonically encode a decimal.
 fn write_decimal(d: &bigdecimal::BigDecimal, buf: &mut Vec<u8>) {
+    // Strip trailing zeros before choosing the form
+    let d = d.normalized();
     let (mantissa, exponent) = d.as_bigint_and_exponent();
 
     let Ok(mut mantissa) = i128::try_from(&mantissa) else {
@@ -682,5 +684,18 @@ mod tests {
         assert_eq!(decode_key(&encode(&date)), None);
         assert_eq!(decode_key(&encode(&Value::Null)), None);
         assert_eq!(decode_key(&[TAG_INT, 1, 2]), None);
+    }
+
+    /// Trailing zeros alone must not move a number onto the textual form.
+    #[test]
+    fn decimal_trailing_zeros_past_i128_encode_like_the_short_form() {
+        use bigdecimal::BigDecimal;
+        use std::str::FromStr;
+
+        let long = format!("1.{}", "0".repeat(40));
+        assert_eq!(
+            encode(&Value::Decimal(BigDecimal::from_str(&long).expect("long"))),
+            encode(&Value::Decimal(BigDecimal::from_str("1").expect("short"))),
+        );
     }
 }

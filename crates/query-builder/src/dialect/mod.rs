@@ -120,4 +120,12 @@ pub trait QueryDialect: Send + Sync {
     fn cast_null_literals(&self) -> bool {
         false
     }
+
+    /// The keyword before each row of a `VALUES` list used as a table:
+    /// MySQL 8.0.19+ needs `ROW(1, 2)`, PostgreSQL takes `(1, 2)`.
+    fn values_row_keyword(&self) -> &'static str;
+
+    /// The integer-division operator, spaces included: MySQL `DIV` (its `/`
+    /// returns a decimal), PostgreSQL `/` (integer on integer operands).
+    fn int_div_operator(&self) -> &'static str;
 }

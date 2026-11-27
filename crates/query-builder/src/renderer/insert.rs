@@ -94,7 +94,7 @@ mod tests {
             common::TableRef,
             expr::{Expr, Ident},
             insert::{ConflictAction, ConflictAssignment, Insert, OnConflict},
-            select::{FromClause, Select},
+            select::{FromClause, Select, TableSource},
         },
         dialect::{MySql, Postgres},
         renderer::{Render, Renderer},
@@ -199,10 +199,10 @@ mod tests {
                 }),
             ],
             from: Some(FromClause {
-                table: TableRef {
+                table: TableSource::Table(TableRef {
                     schema: None,
                     name: "users_stage".to_string(),
-                },
+                }),
                 alias: Some("s".to_string()),
             }),
             ..Default::default()
