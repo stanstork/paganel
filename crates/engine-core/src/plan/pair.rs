@@ -33,6 +33,8 @@ pub struct PairSpec {
     pub key: Option<Vec<String>>,
     /// Zero turns the re-check off.
     pub grace: Duration,
+    /// How the pair is compared: in full, or by block fingerprints.
+    pub block: BlockOptions,
 }
 
 /// One table of a pair.
@@ -43,6 +45,38 @@ pub struct PairSide {
     pub filter: Option<SqlFilter>,
     /// Columns this side leaves out of the hash.
     pub ignore: Vec<String>,
+}
+
+/// How a pair is compared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BlockMode {
+    /// Blocks when the tables qualify, else a full read.
+    Auto,
+    /// Blocks, or an error saying why not.
+    Blocks,
+    /// Read both tables in full.
+    #[default]
+    Full,
+}
+
+/// Block-mode settings of a pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BlockOptions {
+    pub mode: BlockMode,
+    /// A segment with at most this many rows is read instead of split.
+    pub leaf_rows: u64,
+    /// Per-statement limit on each side's block-mode session; `None` for none.
+    pub statement_timeout: Option<Duration>,
+}
+
+impl Default for BlockOptions {
+    fn default() -> Self {
+        Self {
+            mode: BlockMode::default(),
+            leaf_rows: 10_000,
+            statement_timeout: Some(Duration::from_secs(600)),
+        }
+    }
 }
 
 impl PairSpec {
@@ -101,6 +135,7 @@ impl PlanBuilder {
             columns,
             key,
             grace,
+            block: BlockOptions::default(),
         })
     }
 

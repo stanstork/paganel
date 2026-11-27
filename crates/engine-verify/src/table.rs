@@ -24,6 +24,8 @@ use query_builder::offsets::OffsetStrategyFactory;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use tracing::info;
 
+pub(crate) const MAX_RANGES_PER_QUERY: usize = 200;
+
 /// How rows are hashed. Both sides of a comparison must use the same spec, or
 /// equal rows hash differently.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -257,7 +259,7 @@ async fn scan(
 
 /// A keyset reader over `meta`: paged by the primary key when there is one,
 /// so reads stay index-ordered; otherwise by the spec's key.
-fn table_reader(
+pub(crate) fn table_reader(
     driver: &DriverRef,
     meta: &TableMetadata,
     spec: &HashSpec,
@@ -278,6 +280,37 @@ fn table_reader(
         let data_reader: Arc<dyn DataReader> = d.clone() as _;
         Ok(TableReader::new(data_reader, meta.clone(), offset_strategy))
     })
+}
+
+/// Hash only the rows whose `column` falls in one of `ranges` (each closed),
+/// into `sink`. Returns the rows read.
+pub(crate) async fn hash_ranges(
+    driver: &DriverRef,
+    meta: &TableMetadata,
+    spec: &HashSpec,
+    sink: &HashSink<'_>,
+    filter: Option<&SqlFilter>,
+    column: &str,
+    ranges: &[(i64, i64)],
+) -> Result<u64, VerifyError> {
+    let mut rows = 0;
+    for chunk in ranges.chunks(MAX_RANGES_PER_QUERY) {
+        let bounds = chunk
+            .iter()
+            .map(|&(lo, hi)| (Value::Int(lo), Value::Int(hi)))
+            .collect();
+        let reader = table_reader(driver, meta, spec)?
+            .with_filter(filter.cloned())
+            .with_ranges(column.to_string(), bounds);
+
+        rows += scan(&reader, meta, spec, None, |entries| {
+            sink.log
+                .append(sink.scope, sink.pipeline, sink.table, entries)
+                .map_err(Into::into)
+        })
+        .await?;
+    }
+    Ok(rows)
 }
 
 #[cfg(test)]

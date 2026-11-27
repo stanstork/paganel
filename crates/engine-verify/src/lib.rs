@@ -1,6 +1,7 @@
 #![deny(clippy::unwrap_used)]
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
+pub mod blocks;
 pub mod diff;
 pub mod drift;
 pub mod error;
